@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.matches('(?i)aritrabhui@gmail.com') ||
+        request.auth.token.email.matches('(?i)aechardwareclub@gmail.com')
+      );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Admins registry
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    // Quizzes (public read and write)
+    match /quizzes/{quizId} {
+      allow read, write: if true;
+    }
+
+    // Questions (Read/write open for quiz operations)
+    match /questions/{questionId} {
+      allow read, write: if true;
+    }
+
+    // Participant Attempts
+    match /attempts/{attemptId} {
+      allow read, write: if true;
+    }
+
+    // Submissions
+    match /submissions/{submissionId} {
+      allow read, write: if true;
+    }
+
+    // Winners
+    match /winners/{winnerId} {
+      allow read, write: if true;
+    }
+
+    // Leaderboard
+    match /leaderboard/{entryId} {
+      allow read, write: if true;
+    }
+
+    // Animation presets metadata
+    match /animations/{animationId} {
+      allow read, write: if true;
+    }
+
+    // Audit logs
+    match /audit_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Email Notifications log
+    match /email_notifications/{notificationId} {
+      allow read, write: if true;
+    }
+  }
+}
+

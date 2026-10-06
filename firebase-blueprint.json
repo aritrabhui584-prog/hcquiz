@@ -1,0 +1,263 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Participant profile with Google account info and mandatory phone number",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "lastLoginAt": { "type": "string" }
+      },
+      "required": ["uid", "name", "email"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator credentials and roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["superadmin", "quizmaster", "viewer"] },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Weekly quiz edition managed by administrators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 500 },
+        "edition": { "type": "string", "maxLength": 50 },
+        "weekNumber": { "type": "integer" },
+        "questionCount": { "type": "integer" },
+        "durationSeconds": { "type": "integer" },
+        "status": {
+          "type": "string",
+          "enum": ["DRAFT", "READY", "LIVE", "PAUSED", "STOPPED", "RESULTS_PENDING", "WINNERS_PUBLISHED"]
+        },
+        "theme": { "type": "string", "maxLength": 60 },
+        "startsAt": { "type": "string" },
+        "endsAt": { "type": "string" },
+        "resultsPublished": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "status", "questionCount", "durationSeconds"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Hardware MCQ question bank items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "questionText": { "type": "string", "maxLength": 1000 },
+        "optionA": { "type": "string", "maxLength": 300 },
+        "optionB": { "type": "string", "maxLength": 300 },
+        "optionC": { "type": "string", "maxLength": 300 },
+        "optionD": { "type": "string", "maxLength": 300 },
+        "correctAnswer": { "type": "string", "enum": ["A", "B", "C", "D"] },
+        "category": { "type": "string", "maxLength": 100 },
+        "difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD"] },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "animationType": { "type": "string", "maxLength": 50 },
+        "animationAssetUrl": { "type": "string", "maxLength": 1000 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "questionText", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "animationType"]
+    },
+    "Attempt": {
+      "title": "Attempt",
+      "description": "Server-authoritative participant quiz attempt record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "quizId": { "type": "string", "maxLength": 64 },
+        "participantName": { "type": "string", "maxLength": 120 },
+        "participantEmail": { "type": "string", "maxLength": 120 },
+        "participantPhone": { "type": "string", "maxLength": 30 },
+        "startedAt": { "type": "string" },
+        "deadline": { "type": "string" },
+        "durationSeconds": { "type": "integer" },
+        "status": { "type": "string", "enum": ["IN_PROGRESS", "SUBMITTED", "TIMED_OUT", "ABANDONED"] },
+        "finalized": { "type": "boolean" },
+        "submittedAt": { "type": "string" }
+      },
+      "required": ["id", "uid", "quizId", "startedAt", "deadline", "status", "finalized"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Final scored participant submission for admin review and sheets export",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "attemptId": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "quizId": { "type": "string", "maxLength": 64 },
+        "quizTitle": { "type": "string", "maxLength": 150 },
+        "participantName": { "type": "string", "maxLength": 120 },
+        "participantEmail": { "type": "string", "maxLength": 120 },
+        "participantPhone": { "type": "string", "maxLength": 30 },
+        "totalQuestions": { "type": "integer" },
+        "attempted": { "type": "integer" },
+        "correct": { "type": "integer" },
+        "wrong": { "type": "integer" },
+        "score": { "type": "integer" },
+        "startedAt": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "timeUsed": { "type": "integer" },
+        "syncedToSheets": { "type": "boolean" },
+        "sheetsSyncedAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "attemptId", "uid", "quizId", "score", "timeUsed"]
+    },
+    "Winner": {
+      "title": "Winner",
+      "description": "Administrator-selected top 3 winners for a weekly quiz",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "quizId": { "type": "string", "maxLength": 64 },
+        "quizTitle": { "type": "string", "maxLength": 150 },
+        "weekNumber": { "type": "integer" },
+        "published": { "type": "boolean" },
+        "message": { "type": "string", "maxLength": 500 },
+        "publishedAt": { "type": "string" },
+        "publishedBy": { "type": "string", "maxLength": 120 }
+      },
+      "required": ["id", "quizId", "published"]
+    },
+    "Animation": {
+      "title": "Animation",
+      "description": "Hardware visual animation presets and custom asset registry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 80 },
+        "type": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string", "maxLength": 50 },
+        "isCustom": { "type": "boolean" },
+        "assetUrl": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "name", "type"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable server and admin audit trial of events, submissions, and status changes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "eventType": {
+          "type": "string",
+          "enum": ["QUIZ_START", "QUIZ_SUBMIT", "STATUS_CHANGE", "WINNERS_PUBLISHED", "WINNERS_UNPUBLISHED", "QUESTION_MUTATION", "SHEETS_SYNC", "CONFIG_CHANGE"]
+        },
+        "category": { "type": "string", "enum": ["SECURITY", "QUIZ", "ADMIN", "INTEGRATION"] },
+        "severity": { "type": "string", "enum": ["INFO", "WARN", "CRITICAL"] },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 120 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "details": { "type": "string", "maxLength": 500 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "eventType", "category", "severity", "details", "timestamp"]
+    },
+    "LeaderboardRecord": {
+      "title": "LeaderboardRecord",
+      "description": "Read-only final quiz results and rankings for past completed quizzes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "quizId": { "type": "string", "maxLength": 64 },
+        "quizTitle": { "type": "string", "maxLength": 150 },
+        "edition": { "type": "string", "maxLength": 50 },
+        "weekNumber": { "type": "integer" },
+        "totalParticipants": { "type": "integer" },
+        "finalizedAt": { "type": "string" },
+        "published": { "type": "boolean" },
+        "rankings": {
+          "type": "array",
+          "description": "Publicly viewable sanitized rankings list"
+        }
+      },
+      "required": ["id", "quizId", "quizTitle", "rankings"]
+    },
+    "EmailNotification": {
+      "title": "EmailNotification",
+      "description": "Automated email notifications triggered to quiz participants confirming scores and winners page link",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "quizId": { "type": "string" },
+        "recipientEmail": { "type": "string", "format": "email" },
+        "recipientName": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "rank": { "type": "number" },
+        "winnersPageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["SENT", "QUEUED", "FAILED"] },
+        "sentAt": { "type": "string" },
+        "subject": { "type": "string" },
+        "html": { "type": "string" }
+      },
+      "required": ["id", "quizId", "recipientEmail", "recipientName", "score", "winnersPageUrl", "status", "sentAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Participant profiles, restricted to the user themselves or admins"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Club administrators collection"
+    },
+    "/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Weekly quizzes, public read for active/upcoming status, write by admins"
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/Question" },
+      "description": "Master question bank with answer keys, restricted to admin and server"
+    },
+    "/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/Attempt" },
+      "description": "Authoritative quiz attempts, read by owner/admin, managed securely"
+    },
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/Submission" },
+      "description": "Evaluated submission records with marks, read by admin only"
+    },
+    "/winners/{winnerId}": {
+      "schema": { "$ref": "#/entities/Winner" },
+      "description": "Publicly published weekly leaderboard winners"
+    },
+    "/leaderboard/{entryId}": {
+      "schema": { "$ref": "#/entities/LeaderboardRecord" },
+      "description": "Read-only public rankings for past completed quizzes"
+    },
+    "/animations/{animationId}": {
+      "schema": { "$ref": "#/entities/Animation" },
+      "description": "Hardware animation presets metadata"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Chronological audit events trail, read and write restricted to administrators and server"
+    },
+    "/email_notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/EmailNotification" },
+      "description": "Log of automated email notifications dispatched to participants, admin accessible"
+    }
+  }
+}
