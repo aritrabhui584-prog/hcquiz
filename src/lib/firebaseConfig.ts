@@ -15,7 +15,7 @@ export interface FirebaseAppConfig {
 const envApiKey =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) ||
   (typeof process !== 'undefined' && (process.env?.VITE_FIREBASE_API_KEY || process.env?.FIREBASE_API_KEY)) ||
-  '';
+  'AIzaSyA00000000000000000000000000000000';
 
 const envProjectId =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) ||

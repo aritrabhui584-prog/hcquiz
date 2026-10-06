@@ -1,18 +1,17 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import express from 'express';
 import { defineConfig, Plugin } from 'vite';
-import { apiRouter } from './src/server/api';
 
 function apiPlugin(): Plugin {
-  const app = express();
-  app.use(express.json());
-  app.use('/api', apiRouter);
-
   return {
     name: 'api-server',
-    configureServer(server) {
+    async configureServer(server) {
+      const express = (await import('express')).default;
+      const { apiRouter } = await import('./src/server/api');
+      const app = express();
+      app.use(express.json());
+      app.use('/api', apiRouter);
       server.middlewares.use(app);
     },
   };
