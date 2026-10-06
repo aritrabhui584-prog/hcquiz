@@ -11,7 +11,7 @@ import {
   limit
 } from 'firebase/firestore';
 import { db, SUPER_ADMIN_EMAIL, isAuthorizedAdminEmail } from '../lib/firebase';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { firebaseConfig } from '../lib/firebaseConfig';
 import { DEFAULT_QUESTIONS } from '../data/defaultQuestions';
 import {
   AttemptRecord,
