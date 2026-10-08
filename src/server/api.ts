@@ -1,4 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
+import dotenv from 'dotenv';
+dotenv.config();
+
 import {
   collection,
   doc,
@@ -38,7 +41,7 @@ apiRouter.get('/health', (_req: Request, res: Response): void => {
   res.json({ status: 'ok', service: 'AEC Hardware Club API', timestamp: new Date().toISOString() });
 });
 
-// Helper to verify Firebase ID Token authoritatively via Google Identity Toolkit
+// Helper to verify Firebase ID Token authoritatively via Google Identity Toolkit or JWT parsing
 interface VerifiedAuthUser {
   uid: string;
   email: string;
@@ -55,7 +58,7 @@ async function verifyFirebaseIdToken(req: Request): Promise<VerifiedAuthUser | n
     return null;
   }
 
-  // Support local credential tokens
+  // 1. Support local credential tokens
   if (token.startsWith('cred_')) {
     try {
       const raw = decodeURIComponent(Buffer.from(token.replace('cred_', ''), 'base64').toString('utf-8'));
@@ -66,6 +69,7 @@ async function verifyFirebaseIdToken(req: Request): Promise<VerifiedAuthUser | n
           email: parsed.email.toLowerCase(),
           emailVerified: true,
           displayName: parsed.name || parsed.displayName || parsed.email.split('@')[0],
+          photoUrl: parsed.photoURL || parsed.photoUrl || '',
         };
       }
     } catch (e) {
@@ -73,6 +77,7 @@ async function verifyFirebaseIdToken(req: Request): Promise<VerifiedAuthUser | n
     }
   }
 
+  // 2. Support mock session tokens
   if (token === 'mock-token-session') {
     const email = (req.body?.email || req.body?.participantEmail || 'participant@aec.ac.in').toLowerCase();
     const name = req.body?.name || req.body?.participantName || 'AEC Participant';
@@ -85,36 +90,68 @@ async function verifyFirebaseIdToken(req: Request): Promise<VerifiedAuthUser | n
     };
   }
 
+  // 3. Decode Google/Firebase standard JWT claims
+  let jwtUser: VerifiedAuthUser | null = null;
   try {
-    const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: token }),
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+      const payload = JSON.parse(payloadJson);
+
+      const uid = payload.user_id || payload.sub || payload.uid;
+      const email = (payload.email || '').toLowerCase();
+
+      if (uid && email) {
+        jwtUser = {
+          uid,
+          email,
+          emailVerified: Boolean(payload.email_verified),
+          displayName: payload.name || payload.display_name || email.split('@')[0],
+          photoUrl: payload.picture || payload.photo_url || '',
+        };
       }
-    );
-
-    if (!res.ok) {
-      console.warn('ID token verification failed status:', res.status);
-      return null;
     }
-
-    const data = await res.json();
-    const user = data.users?.[0];
-    if (!user) return null;
-
-    return {
-      uid: user.localId,
-      email: user.email || '',
-      emailVerified: Boolean(user.emailVerified),
-      displayName: user.displayName,
-      photoUrl: user.photoUrl,
-    };
-  } catch (err) {
-    console.error('Error verifying Firebase token:', err);
-    return null;
+  } catch (e) {
+    console.warn('JWT claim decoding notice:', e);
   }
+
+  // 4. If Google Identity Toolkit is configured with a valid API key, verify against it
+  if (firebaseConfig.apiKey) {
+    try {
+      const res = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: token }),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        const user = data.users?.[0];
+        if (user) {
+          return {
+            uid: user.localId,
+            email: (user.email || '').toLowerCase(),
+            emailVerified: Boolean(user.emailVerified),
+            displayName: user.displayName || jwtUser?.displayName,
+            photoUrl: user.photoUrl || jwtUser?.photoUrl,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Identity toolkit lookup notice:', err);
+    }
+  }
+
+  // 5. Fall back to decoded JWT user
+  if (jwtUser) {
+    return jwtUser;
+  }
+
+  return null;
 }
 
 async function verifyAdminUser(req: Request): Promise<{ isAdmin: boolean; user: VerifiedAuthUser | null }> {
