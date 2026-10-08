@@ -1278,6 +1278,7 @@ function MainApp() {
               currentQuiz={currentQuiz}
               submissions={submissions}
               attempts={attempts}
+              questions={questions}
               currentWinners={currentWinners}
               onPublishWinners={handlePublishWinners}
               onUnpublishWinners={handleUnpublishWinners}
