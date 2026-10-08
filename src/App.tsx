@@ -232,64 +232,6 @@ function MainApp() {
     };
   }, [isAdmin]);
 
-  // Auto-heal any past expired attempts to SUBMITTED status in Firestore
-  useEffect(() => {
-    if (!isAdmin || attempts.length === 0) return;
-    const now = Date.now();
-    attempts.forEach(async (a) => {
-      if (a.status === 'IN_PROGRESS') {
-        const deadlineTime = a.deadline
-          ? new Date(a.deadline).getTime()
-          : new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000;
-        if (now > deadlineTime + 2000) {
-          const subTime = a.deadline || new Date(deadlineTime).toISOString();
-          const usedSec = a.durationSeconds || 120;
-          try {
-            await updateDoc(doc(db, 'attempts', a.id), {
-              status: 'SUBMITTED',
-              finalized: true,
-              submittedAt: subTime,
-              timeUsed: usedSec,
-            });
-            const subId = `sub_${a.id}`;
-            const subRef = doc(db, 'submissions', subId);
-            const subSnap = await getDoc(subRef);
-            if (!subSnap.exists()) {
-              await setDoc(subRef, {
-                id: subId,
-                attemptId: a.id,
-                uid: a.uid,
-                quizId: a.quizId || 'sharadiya-circuit-2026',
-                quizTitle: 'SHARADIYA CIRCUIT 2026',
-                participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
-                participantEmail: a.participantEmail || '',
-                participantPhone: a.participantPhone || 'N/A',
-                participantPhotoUrl: a.participantPhotoUrl || '',
-                stream: a.stream || '',
-                year: a.year || '',
-                rollNo: a.rollNo || '',
-                membershipId: a.membershipId || '',
-                answers: (a as any).answers || {},
-                totalQuestions: a.selectedQuestionIds?.length || 25,
-                attempted: (a as any).attempted ?? 25,
-                correct: (a as any).score ?? 20,
-                wrong: 5,
-                score: (a as any).score ?? 20,
-                startedAt: a.startedAt,
-                submittedAt: subTime,
-                timeUsed: usedSec,
-                syncedToSheets: false,
-                createdAt: subTime,
-              });
-            }
-          } catch (e) {
-            console.warn('Auto-finalize attempt notice:', e);
-          }
-        }
-      }
-    });
-  }, [isAdmin, attempts]);
-
   // 5. Winners Listener
   useEffect(() => {
     const unsubWinners = onSnapshot(collection(db, 'winners'), (snap) => {
@@ -742,6 +684,12 @@ function MainApp() {
         }
       } catch {}
 
+      if (participant.uid) {
+        try {
+          await deleteDoc(doc(db, 'users', participant.uid));
+        } catch {}
+      }
+
       setAttempts((prev) =>
         prev.filter(
           (a) =>
@@ -789,11 +737,31 @@ function MainApp() {
         }
       } catch {}
 
+      try {
+        const snapSub = await getDocs(collection(db, 'submissions'));
+        for (const d of snapSub.docs) {
+          const data = d.data();
+          if (
+            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
+            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
+          ) {
+            await deleteDoc(doc(db, 'submissions', d.id));
+          }
+        }
+      } catch {}
+
       setAttempts((prev) =>
         prev.filter(
           (a) =>
             a.uid !== participant.uid &&
             a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+        )
+      );
+      setSubmissions((prev) =>
+        prev.filter(
+          (s) =>
+            s.uid !== participant.uid &&
+            s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
         )
       );
     } catch (err) {
