@@ -932,7 +932,16 @@ apiRouter.post('/admin/sync-sheet', async (req: Request, res: Response): Promise
 
 /**
  * POST /api/admin/delete-participant
- * Deletes all attempt records, submission records, and user document for a participant
+ * Strictly and completely deletes the participant from the server and database:
+ * - users collection (all documents matching UID or Email)
+ * - attempts collection (all documents matching UID, Email, or containing UID)
+ * - submissions collection (all documents matching UID, Email, or containing UID)
+ * - leaderboard collection (matching UID or Email)
+ * - winners podium drafts (removes participant if present)
+ * - email_notifications & mail collections (queued or sent logs)
+ * - historical audit logs associated with participant
+ * - Server in-memory attempts & submissions maps
+ * - Firebase Auth account deletion via Google Identity Toolkit API
  */
 apiRouter.post('/admin/delete-participant', async (req: Request, res: Response): Promise<void> => {
   const { isAdmin, user } = await verifyAdminUser(req);
@@ -948,61 +957,186 @@ apiRouter.post('/admin/delete-participant', async (req: Request, res: Response):
       return;
     }
 
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanUid = (uid || '').trim();
+
     let deletedAttempts = 0;
     let deletedSubmissions = 0;
+    let deletedUsers = 0;
 
-    // 1. Delete attempts from Firestore and in-memory cache
+    // 1. Delete all matching attempts from Firestore & in-memory cache
     try {
-      const q = uid
-        ? query(collection(db, 'attempts'), where('uid', '==', uid))
-        : query(collection(db, 'attempts'), where('participantEmail', '==', email));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await deleteDoc(doc(db, 'attempts', d.id));
-        inMemoryAttempts.delete(d.id);
-        deletedAttempts++;
+      const snapAtt = await getDocs(collection(db, 'attempts'));
+      for (const d of snapAtt.docs) {
+        const data = d.data();
+        const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+        const matchesEmail = cleanEmail && (
+          (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+          (data.email && data.email.toLowerCase() === cleanEmail)
+        );
+        if (matchesUid || matchesEmail) {
+          await deleteDoc(doc(db, 'attempts', d.id));
+          inMemoryAttempts.delete(d.id);
+          deletedAttempts++;
+        }
       }
     } catch (e) {
       console.warn('Firestore attempt deletion notice:', e);
     }
 
-    // Also purge any in-memory attempts matching UID or Email
+    // Purge in-memory attempts map
     inMemoryAttempts.forEach((att, key) => {
-      if ((uid && att.uid === uid) || (email && att.participantEmail === email)) {
+      const matchesUid = cleanUid && (att.uid === cleanUid || key.includes(cleanUid));
+      const matchesEmail = cleanEmail && (att.participantEmail && att.participantEmail.toLowerCase() === cleanEmail);
+      if (matchesUid || matchesEmail) {
         inMemoryAttempts.delete(key);
       }
     });
 
-    // 2. Delete submissions from Firestore and in-memory cache
+    // 2. Delete all matching submissions from Firestore & in-memory cache
     try {
-      const q = uid
-        ? query(collection(db, 'submissions'), where('uid', '==', uid))
-        : query(collection(db, 'submissions'), where('participantEmail', '==', email));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await deleteDoc(doc(db, 'submissions', d.id));
-        inMemorySubmissions.delete(d.id);
-        deletedSubmissions++;
+      const snapSub = await getDocs(collection(db, 'submissions'));
+      for (const d of snapSub.docs) {
+        const data = d.data();
+        const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+        const matchesEmail = cleanEmail && (
+          (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+          (data.email && data.email.toLowerCase() === cleanEmail)
+        );
+        if (matchesUid || matchesEmail) {
+          await deleteDoc(doc(db, 'submissions', d.id));
+          inMemorySubmissions.delete(d.id);
+          deletedSubmissions++;
+        }
       }
     } catch (e) {
       console.warn('Firestore submission deletion notice:', e);
     }
 
-    // Also purge any in-memory submissions matching UID or Email
+    // Purge in-memory submissions map
     inMemorySubmissions.forEach((sub, key) => {
-      if ((uid && sub.uid === uid) || (email && sub.participantEmail === email)) {
+      const matchesUid = cleanUid && (sub.uid === cleanUid || key.includes(cleanUid));
+      const matchesEmail = cleanEmail && (sub.participantEmail && sub.participantEmail.toLowerCase() === cleanEmail);
+      if (matchesUid || matchesEmail) {
         inMemorySubmissions.delete(key);
       }
     });
 
-    // 3. Delete user document from Firestore if exists
-    if (uid) {
+    // 3. Complete delete of user document from Firestore (by UID and by email query)
+    if (cleanUid) {
       try {
-        await deleteDoc(doc(db, 'users', uid));
+        await deleteDoc(doc(db, 'users', cleanUid));
+        deletedUsers++;
       } catch {}
     }
 
-    // 4. Log Audit Event
+    try {
+      const snapUsers = await getDocs(collection(db, 'users'));
+      for (const d of snapUsers.docs) {
+        const data = d.data();
+        const docEmail = (data.email || '').toLowerCase();
+        const docUid = data.uid || d.id;
+        if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+          await deleteDoc(doc(db, 'users', d.id));
+          deletedUsers++;
+        }
+      }
+    } catch (e) {
+      console.warn('Firestore user document deletion notice:', e);
+    }
+
+    // 4. Delete leaderboard entries
+    try {
+      const snapLead = await getDocs(collection(db, 'leaderboard'));
+      for (const d of snapLead.docs) {
+        const data = d.data();
+        const docEmail = (data.email || data.participantEmail || '').toLowerCase();
+        const docUid = data.uid || d.id;
+        if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+          await deleteDoc(doc(db, 'leaderboard', d.id));
+        }
+      }
+    } catch {}
+
+    // 5. Clean up any published / draft winner podium entries referencing this participant
+    try {
+      const snapWinners = await getDocs(collection(db, 'winners'));
+      for (const d of snapWinners.docs) {
+        const data = d.data();
+        let changed = false;
+        const updated: Record<string, any> = {};
+
+        ['firstPlace', 'secondPlace', 'thirdPlace'].forEach((placeKey) => {
+          const place = data[placeKey];
+          if (place) {
+            const pEmail = (place.email || '').toLowerCase();
+            const pUid = place.uid;
+            if ((cleanEmail && pEmail === cleanEmail) || (cleanUid && pUid === cleanUid)) {
+              updated[placeKey] = null;
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          await updateDoc(doc(db, 'winners', d.id), updated);
+        }
+      }
+    } catch {}
+
+    // 6. Delete email notifications & mail records for this user
+    try {
+      const snapNotif = await getDocs(collection(db, 'email_notifications'));
+      for (const d of snapNotif.docs) {
+        const data = d.data();
+        const rEmail = (data.recipientEmail || data.to || '').toLowerCase();
+        if (cleanEmail && rEmail === cleanEmail) {
+          await deleteDoc(doc(db, 'email_notifications', d.id));
+        }
+      }
+    } catch {}
+
+    try {
+      const snapMail = await getDocs(collection(db, 'mail'));
+      for (const d of snapMail.docs) {
+        const data = d.data();
+        const toEmail = (data.to || '').toLowerCase();
+        if (cleanEmail && toEmail === cleanEmail) {
+          await deleteDoc(doc(db, 'mail', d.id));
+        }
+      }
+    } catch {}
+
+    // 7. Purge historical participant audit trails referencing the user
+    try {
+      const snapAudit = await getDocs(collection(db, 'audit_logs'));
+      for (const d of snapAudit.docs) {
+        const data = d.data();
+        const aUid = data.actorUid || data.metadata?.targetUid || data.metadata?.uid;
+        const aEmail = (data.actorEmail || data.metadata?.targetEmail || data.metadata?.email || '').toLowerCase();
+        if (
+          data.eventType !== 'PARTICIPANT_DELETED' &&
+          ((cleanUid && aUid === cleanUid) || (cleanEmail && aEmail === cleanEmail))
+        ) {
+          await deleteDoc(doc(db, 'audit_logs', d.id));
+        }
+      }
+    } catch {}
+
+    // 8. Delete user from Firebase Auth via Google Identity Toolkit REST API
+    if (cleanUid && firebaseConfig.apiKey) {
+      try {
+        await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${firebaseConfig.apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ localId: cleanUid }),
+        });
+      } catch (authErr) {
+        console.warn('Firebase Auth account delete notice:', authErr);
+      }
+    }
+
+    // 9. Log Admin Audit Event
     await logAuditEvent({
       eventType: 'PARTICIPANT_DELETED',
       category: 'ADMIN',
@@ -1010,15 +1144,16 @@ apiRouter.post('/admin/delete-participant', async (req: Request, res: Response):
       actorUid: user.uid,
       actorEmail: user.email,
       actorName: user.displayName || user.email.split('@')[0],
-      details: `Deleted participant "${name || email || uid}" (Purged ${deletedAttempts} attempts, ${deletedSubmissions} submissions).`,
-      metadata: { targetUid: uid, targetEmail: email, deletedAttempts, deletedSubmissions },
+      details: `Participant "${name || email || uid}" permanently and completely deleted from server and database.`,
+      metadata: { deletedAttempts, deletedSubmissions, deletedUsers },
     });
 
     res.json({
       success: true,
-      message: `Participant record deleted successfully.`,
+      message: 'Participant completely deleted from server and database.',
       deletedAttempts,
       deletedSubmissions,
+      deletedUsers,
     });
   } catch (err: any) {
     console.error('Delete participant error:', err);
@@ -1084,7 +1219,11 @@ apiRouter.post('/admin/delete-submission', async (req: Request, res: Response): 
 
 /**
  * POST /api/admin/reset-attempt
- * Resets/deletes in-progress or completed attempts for a candidate so they can re-take
+ * Complete reset of the quiz for a particular participant:
+ * - Purges all attempts from Firestore & in-memory cache
+ * - Purges all submissions from Firestore & in-memory cache
+ * - Purges leaderboard records
+ * - Retains the participant's user account profile so they can immediately take a fresh attempt
  */
 apiRouter.post('/admin/reset-attempt', async (req: Request, res: Response): Promise<void> => {
   const { isAdmin, user } = await verifyAdminUser(req);
@@ -1100,48 +1239,82 @@ apiRouter.post('/admin/reset-attempt', async (req: Request, res: Response): Prom
       return;
     }
 
-    let resetCount = 0;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanUid = (uid || '').trim();
+
+    let resetAttempts = 0;
+    let resetSubmissions = 0;
+
+    // 1. Delete all attempt records for this participant from Firestore
     try {
-      const q = uid
-        ? query(collection(db, 'attempts'), where('uid', '==', uid))
-        : query(collection(db, 'attempts'), where('participantEmail', '==', email));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await deleteDoc(doc(db, 'attempts', d.id));
-        inMemoryAttempts.delete(d.id);
-        resetCount++;
+      const snapAtt = await getDocs(collection(db, 'attempts'));
+      for (const d of snapAtt.docs) {
+        const data = d.data();
+        const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+        const matchesEmail = cleanEmail && (
+          (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+          (data.email && data.email.toLowerCase() === cleanEmail)
+        );
+        if (matchesUid || matchesEmail) {
+          await deleteDoc(doc(db, 'attempts', d.id));
+          inMemoryAttempts.delete(d.id);
+          resetAttempts++;
+        }
       }
     } catch (e) {
       console.warn('Firestore attempt reset notice:', e);
     }
 
     inMemoryAttempts.forEach((att, key) => {
-      if ((uid && att.uid === uid) || (email && att.participantEmail === email)) {
+      const matchesUid = cleanUid && (att.uid === cleanUid || key.includes(cleanUid));
+      const matchesEmail = cleanEmail && (att.participantEmail && att.participantEmail.toLowerCase() === cleanEmail);
+      if (matchesUid || matchesEmail) {
         inMemoryAttempts.delete(key);
-        resetCount++;
       }
     });
 
-    // Also remove any existing submissions so the participant has a completely fresh slate
+    // 2. Delete all submission records for this participant from Firestore
     try {
-      const qSub = uid
-        ? query(collection(db, 'submissions'), where('uid', '==', uid))
-        : query(collection(db, 'submissions'), where('participantEmail', '==', email));
-      const snapSub = await getDocs(qSub);
+      const snapSub = await getDocs(collection(db, 'submissions'));
       for (const d of snapSub.docs) {
-        await deleteDoc(doc(db, 'submissions', d.id));
-        inMemorySubmissions.delete(d.id);
+        const data = d.data();
+        const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+        const matchesEmail = cleanEmail && (
+          (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+          (data.email && data.email.toLowerCase() === cleanEmail)
+        );
+        if (matchesUid || matchesEmail) {
+          await deleteDoc(doc(db, 'submissions', d.id));
+          inMemorySubmissions.delete(d.id);
+          resetSubmissions++;
+        }
       }
     } catch (e) {
       console.warn('Firestore submission reset notice:', e);
     }
 
     inMemorySubmissions.forEach((sub, key) => {
-      if ((uid && sub.uid === uid) || (email && sub.participantEmail === email)) {
+      const matchesUid = cleanUid && (sub.uid === cleanUid || key.includes(cleanUid));
+      const matchesEmail = cleanEmail && (sub.participantEmail && sub.participantEmail.toLowerCase() === cleanEmail);
+      if (matchesUid || matchesEmail) {
         inMemorySubmissions.delete(key);
       }
     });
 
+    // 3. Remove leaderboard entries for this participant
+    try {
+      const snapLead = await getDocs(collection(db, 'leaderboard'));
+      for (const d of snapLead.docs) {
+        const data = d.data();
+        const docEmail = (data.email || data.participantEmail || '').toLowerCase();
+        const docUid = data.uid || d.id;
+        if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+          await deleteDoc(doc(db, 'leaderboard', d.id));
+        }
+      }
+    } catch {}
+
+    // 4. Log Audit Event
     await logAuditEvent({
       eventType: 'ATTEMPT_RESET',
       category: 'ADMIN',
@@ -1149,14 +1322,19 @@ apiRouter.post('/admin/reset-attempt', async (req: Request, res: Response): Prom
       actorUid: user.uid,
       actorEmail: user.email,
       actorName: user.displayName || user.email.split('@')[0],
-      details: `Reset quiz session attempt for candidate ${email || uid} (Removed ${resetCount} attempt records).`,
-      metadata: { targetUid: uid, targetEmail: email, resetCount },
+      details: `Complete quiz reset executed for candidate ${cleanEmail || cleanUid}. Participant granted a fresh quiz attempt.`,
+      metadata: { targetUid: cleanUid, targetEmail: cleanEmail, resetAttempts, resetSubmissions },
     });
 
-    res.json({ success: true, message: 'Participant attempt reset successfully.', resetCount });
+    res.json({
+      success: true,
+      message: 'Quiz completely reset for the participant.',
+      resetAttempts,
+      resetSubmissions,
+    });
   } catch (err: any) {
     console.error('Reset attempt error:', err);
-    res.status(500).json({ error: err.message || 'Failed to reset attempt.' });
+    res.status(500).json({ error: err.message || 'Failed to reset quiz attempt.' });
   }
 });
 

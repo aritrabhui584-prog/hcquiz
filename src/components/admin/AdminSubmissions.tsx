@@ -501,7 +501,7 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
 
               <!-- Question by Question Title -->
               <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #334155; margin-bottom: 10px; letter-spacing: 0.5px;">
-                Verified Answer Script Breakdown (${answersEntries.length} Items Evaluated):
+                Verified Answer Script Breakdown (${questionsList.length} Items Evaluated):
               </div>
 
               <!-- Question Cards -->

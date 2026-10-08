@@ -85,8 +85,8 @@ export interface QuestionItem {
   animationAssetUrl?: string;
   active: boolean;
   explanation?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** Sanitized question returned to participant client — NEVER contains correctAnswer */
@@ -123,6 +123,13 @@ export interface AttemptRecord {
   status: 'IN_PROGRESS' | 'SUBMITTED' | 'TIMED_OUT' | 'ABANDONED';
   finalized: boolean;
   submittedAt?: string;
+  answers?: Record<string, string>;
+  score?: number;
+  correct?: number;
+  wrong?: number;
+  attempted?: number;
+  timeUsed?: number;
+  createdAt?: string;
 }
 
 export interface SubmissionRecord {
@@ -242,7 +249,11 @@ export type AuditEventType =
   | 'QUESTION_MUTATION'
   | 'SHEETS_SYNC'
   | 'NOTIFICATION_DISPATCH'
-  | 'CONFIG_CHANGE';
+  | 'CONFIG_CHANGE'
+  | 'PARTICIPANT_DELETED'
+  | 'ATTEMPT_RESET'
+  | 'SUBMISSION_DELETED'
+  | 'SYSTEM_READY';
 
 export interface AuditLogItem {
   id: string;
@@ -252,6 +263,9 @@ export interface AuditLogItem {
   actorUid?: string;
   actorEmail?: string;
   actorName?: string;
+  actorRole?: string;
+  targetId?: string;
+  ipAddress?: string;
   details: string;
   metadata?: Record<string, any>;
   timestamp: string;

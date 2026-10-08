@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
-import { SubmissionRecord, AttemptRecord, QuestionItem } from '../../types/quiz';
+import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2, RotateCcw, User } from 'lucide-react';
+import { SubmissionRecord, AttemptRecord, QuestionItem, UserProfile } from '../../types/quiz';
 
 interface AdminParticipantsProps {
   attempts: AttemptRecord[];
   submissions: SubmissionRecord[];
   questions?: QuestionItem[];
+  users?: UserProfile[];
   onDeleteParticipant?: (participant: { uid: string; email: string; name: string }) => Promise<void>;
   onResetAttempt?: (participant: { uid: string; email: string }) => Promise<void>;
 }
@@ -14,6 +15,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   attempts,
   submissions,
   questions = [],
+  users = [],
   onDeleteParticipant,
   onResetAttempt,
 }) => {
@@ -47,7 +49,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     return map;
   }, [questions]);
 
-  // Merge unique participants from attempts and submissions
+  // Merge unique participants from registered users, attempts, and submissions
   const participantMap = new Map<string, {
     uid: string;
     name: string;
@@ -64,6 +66,28 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     attempted: number | null;
   }>();
 
+  // 1. Seed with registered users
+  users.forEach((u) => {
+    if (u.isAdmin) return; // Skip admin accounts from participant list
+    const userKey = (u.uid || u.email).toLowerCase();
+    participantMap.set(userKey, {
+      uid: u.uid || userKey,
+      name: u.name || (u.email ? u.email.split('@')[0] : 'Participant'),
+      email: u.email || '',
+      phone: u.phone || 'N/A',
+      photoUrl: u.photoURL,
+      quizId: 'sharadiya-circuit-2026',
+      startedAt: u.createdAt || '',
+      submittedAt: null,
+      status: 'REGISTERED',
+      timeUsed: null,
+      score: null,
+      totalQuestions: 25,
+      attempted: null,
+    });
+  });
+
+  // 2. Overlay attempts
   attempts.forEach((a) => {
     const isPastDeadline = a.deadline
       ? new Date(a.deadline).getTime() <= Date.now()
@@ -101,6 +125,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     }
 
     const userKey = (a.uid || a.participantEmail || a.id).toLowerCase();
+    const existing = participantMap.get(userKey);
     let dynamicTime = (a as any).timeUsed ?? elapsed;
     if (!dynamicTime || dynamicTime >= 120) {
       const hash = userKey.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -108,13 +133,13 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     }
 
     participantMap.set(userKey, {
-      uid: a.uid || userKey,
-      name: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
-      email: a.participantEmail || '',
-      phone: a.participantPhone || 'N/A',
-      photoUrl: a.participantPhotoUrl,
-      quizId: a.quizId,
-      startedAt: a.startedAt,
+      uid: a.uid || existing?.uid || userKey,
+      name: a.participantName || existing?.name || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
+      email: a.participantEmail || existing?.email || '',
+      phone: a.participantPhone || existing?.phone || 'N/A',
+      photoUrl: a.participantPhotoUrl || existing?.photoUrl,
+      quizId: a.quizId || existing?.quizId || 'sharadiya-circuit-2026',
+      startedAt: a.startedAt || existing?.startedAt || '',
       submittedAt: effectiveSubmittedAt,
       status: computedStatus,
       timeUsed: dynamicTime,
@@ -124,6 +149,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     });
   });
 
+  // 3. Overlay submissions
   submissions.forEach((s) => {
     const userKey = (s.uid || s.participantEmail || s.id).toLowerCase();
     const existing = participantMap.get(userKey);
@@ -301,7 +327,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                         {onResetAttempt && (
                           <button
                             onClick={async () => {
-                              if (confirm(`Reset session for ${p.name} so they can re-take the quiz?`)) {
+                              if (confirm(`Complete Quiz Reset: Are you sure you want to reset the quiz for ${p.name}?\n\nThis will completely clear all past attempts, timer sessions, and answer submissions for this candidate, granting them a fresh attempt.`)) {
                                 setResettingUid(p.uid);
                                 try {
                                   await onResetAttempt({ uid: p.uid, email: p.email });
@@ -312,7 +338,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                             }}
                             disabled={resettingUid === p.uid}
                             className="px-2.5 py-1.5 rounded-lg bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/30 text-xs font-mono text-cyan-400 hover:text-cyan-200 transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                            title="Reset attempt session to allow re-taking the quiz"
+                            title="Complete Reset: Clear attempts & submissions to allow candidate to retake the quiz"
                           >
                             <RotateCcw className={`w-3.5 h-3.5 ${resettingUid === p.uid ? 'animate-spin' : ''}`} />
                             <span>RESET</span>
@@ -323,7 +349,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                           <button
                             onClick={() => setDeletingParticipant({ uid: p.uid, email: p.email, name: p.name })}
                             className="px-2.5 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-xs font-mono text-rose-400 hover:text-rose-200 transition inline-flex items-center gap-1.5 cursor-pointer"
-                            title="Delete participant record, answer scripts, and attempts"
+                            title="Complete Delete: Permanently delete participant from database & server"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>DELETE</span>
@@ -348,16 +374,16 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-base">Delete Participant?</h3>
-                <p className="font-mono text-xs text-slate-400">Irreversible administrative action</p>
+                <h3 className="font-bold text-white text-base">Permanently Delete Participant?</h3>
+                <p className="font-mono text-xs text-slate-400">Complete delete from server & database</p>
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 font-mono text-xs space-y-1.5 text-slate-300">
               <div>Participant: <strong className="text-white">{deletingParticipant.name}</strong></div>
               <div>Email: <span className="text-emerald-400">{deletingParticipant.email || 'N/A'}</span></div>
-              <div className="text-[11px] text-rose-400/90 pt-1">
-                ⚠️ This will permanently delete the participant&apos;s answer scripts, quiz attempts, and scores.
+              <div className="text-[11px] text-rose-400/90 pt-1 leading-relaxed">
+                ⚠️ <strong>Strict Rule:</strong> This will permanently delete the participant account from the database and server, including user registration profiles, answer scripts, attempts, leaderboard records, and notification logs. No evidence of this user will remain.
               </div>
             </div>
 
@@ -380,12 +406,12 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                 {isDeleting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>DELETING...</span>
+                    <span>DELETING FROM SERVER...</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    <span>CONFIRM DELETE</span>
+                    <span>CONFIRM COMPLETE DELETE</span>
                   </>
                 )}
               </button>

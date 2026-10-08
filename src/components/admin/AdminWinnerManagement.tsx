@@ -14,7 +14,7 @@ import {
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
-import { SubmissionRecord, PublishedWinner, QuizEdition, AttemptRecord } from '../../types/quiz';
+import { SubmissionRecord, PublishedWinner, QuizEdition, AttemptRecord, QuestionItem } from '../../types/quiz';
 import { useAuth } from '../../context/AuthContext';
 
 interface AdminWinnerManagementProps {

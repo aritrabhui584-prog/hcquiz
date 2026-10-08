@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   collection,
   doc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -45,8 +46,10 @@ import {
   SubmissionRecord,
   PublishedWinner,
   AuditLogItem,
+  AuditEventType,
   LeaderboardRecord,
-  LeaderboardRankingItem
+  LeaderboardRankingItem,
+  UserProfile
 } from './types/quiz';
 import { DEFAULT_QUESTIONS } from './data/defaultQuestions';
 
@@ -65,6 +68,7 @@ function MainApp() {
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
   const [currentWinners, setCurrentWinners] = useState<PublishedWinner | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
 
@@ -175,6 +179,8 @@ function MainApp() {
 
     let unsubAttempts = () => {};
     let unsubSubmissions = () => {};
+    let isAttAttempted = false;
+    let isSubAttempted = false;
 
     try {
       const qAtt = query(
@@ -182,14 +188,12 @@ function MainApp() {
         where('uid', '==', currentUser.uid)
       );
       unsubAttempts = onSnapshot(qAtt, (snapshot) => {
-        const attempted = snapshot.docs.some((d) => {
+        isAttAttempted = snapshot.docs.some((d) => {
           const data = d.data();
           const isPast = data.deadline ? new Date(data.deadline).getTime() < Date.now() : false;
           return data.finalized === true || data.status === 'SUBMITTED' || data.status === 'TIMED_OUT' || isPast;
         });
-        if (attempted) {
-          setHasAttempted(true);
-        }
+        setHasAttempted(isAttAttempted || isSubAttempted);
       });
     } catch {}
 
@@ -199,9 +203,8 @@ function MainApp() {
         where('uid', '==', currentUser.uid)
       );
       unsubSubmissions = onSnapshot(qSub, (snapshot) => {
-        if (!snapshot.empty) {
-          setHasAttempted(true);
-        }
+        isSubAttempted = !snapshot.empty;
+        setHasAttempted(isAttAttempted || isSubAttempted);
       });
     } catch {}
 
@@ -298,7 +301,7 @@ function MainApp() {
             return updatedAttempt;
           }
 
-          return { id: d.id, ...data } as AttemptRecord;
+          return { ...data, id: d.id } as AttemptRecord;
         });
 
         setAttempts(loadedAttempts);
@@ -355,7 +358,7 @@ function MainApp() {
             setDoc(doc(db, 'submissions', d.id), updatedSub, { merge: true }).catch(() => {});
             return updatedSub;
           }
-          return { id: d.id, ...data } as SubmissionRecord;
+          return { ...data, id: d.id } as SubmissionRecord;
         });
 
         setSubmissions(loadedSubmissions);
@@ -371,6 +374,7 @@ function MainApp() {
           const initLog: AuditLogItem = {
             id: initLogId,
             eventType: 'SYSTEM_READY',
+            category: 'ADMIN',
             actorEmail: 'system@aec-hardware.org',
             actorRole: 'SYSTEM',
             targetId: currentQuiz?.id || 'sharadiya-circuit-2026',
@@ -393,10 +397,22 @@ function MainApp() {
       console.warn('Audit logs realtime listener notice:', err);
     }
 
+    let unsubUsers = () => {};
+
+    try {
+      unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+        const usersList = snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserProfile));
+        setRegisteredUsers(usersList);
+      });
+    } catch (err) {
+      console.warn('Users realtime listener notice:', err);
+    }
+
     return () => {
       unsubAttempts();
       unsubSubmissions();
       unsubAudit();
+      unsubUsers();
     };
   }, [isAdmin]);
 
@@ -813,9 +829,9 @@ function MainApp() {
 
   // ADMIN OPERATIONS
   const logAdminAction = async (params: {
-    eventType: string;
-    category?: string;
-    severity?: string;
+    eventType: AuditEventType;
+    category?: 'SECURITY' | 'QUIZ' | 'ADMIN' | 'INTEGRATION';
+    severity?: 'INFO' | 'WARN' | 'CRITICAL';
     details: string;
     metadata?: Record<string, any>;
   }) => {
@@ -823,12 +839,13 @@ function MainApp() {
     const logItem: AuditLogItem = {
       id: logId,
       eventType: params.eventType,
+      category: params.category || 'ADMIN',
       actorEmail: currentUser?.email || 'admin@aec-hardware.org',
       actorName: currentUser?.displayName || 'Admin',
       actorRole: 'ADMIN',
       targetId: params.metadata?.quizId || params.metadata?.targetId || 'SYSTEM',
       details: params.details,
-      severity: (params.severity as any) || 'INFO',
+      severity: params.severity || 'INFO',
       ipAddress: 'ADMIN_CONSOLE',
       timestamp: new Date().toISOString(),
       metadata: params.metadata || {},
@@ -950,6 +967,9 @@ function MainApp() {
 
   const handleDeleteParticipant = async (participant: { uid: string; email: string; name: string }) => {
     try {
+      const cleanEmail = (participant.email || '').trim().toLowerCase();
+      const cleanUid = (participant.uid || '').trim();
+
       const idToken = await getIdToken();
       try {
         await fetch('/api/admin/delete-participant', {
@@ -962,58 +982,106 @@ function MainApp() {
         });
       } catch {}
 
+      // 1. Client-side attempts purge
       try {
         const snapAtt = await getDocs(collection(db, 'attempts'));
         for (const d of snapAtt.docs) {
           const data = d.data();
-          if (
-            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
-            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
-          ) {
+          const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+          const matchesEmail = cleanEmail && (
+            (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+            (data.email && data.email.toLowerCase() === cleanEmail)
+          );
+          if (matchesUid || matchesEmail) {
             await deleteDoc(doc(db, 'attempts', d.id));
           }
         }
       } catch {}
 
+      // 2. Client-side submissions purge
       try {
         const snapSub = await getDocs(collection(db, 'submissions'));
         for (const d of snapSub.docs) {
           const data = d.data();
-          if (
-            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
-            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
-          ) {
+          const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+          const matchesEmail = cleanEmail && (
+            (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+            (data.email && data.email.toLowerCase() === cleanEmail)
+          );
+          if (matchesUid || matchesEmail) {
             await deleteDoc(doc(db, 'submissions', d.id));
           }
         }
       } catch {}
 
-      if (participant.uid) {
+      // 3. Client-side user document purge
+      if (cleanUid) {
         try {
-          await deleteDoc(doc(db, 'users', participant.uid));
+          await deleteDoc(doc(db, 'users', cleanUid));
         } catch {}
       }
+      try {
+        const snapUsers = await getDocs(collection(db, 'users'));
+        for (const d of snapUsers.docs) {
+          const data = d.data();
+          const docEmail = (data.email || '').toLowerCase();
+          const docUid = data.uid || d.id;
+          if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+            await deleteDoc(doc(db, 'users', d.id));
+          }
+        }
+      } catch {}
 
+      // 4. Client-side leaderboard purge
+      try {
+        const snapLead = await getDocs(collection(db, 'leaderboard'));
+        for (const d of snapLead.docs) {
+          const data = d.data();
+          const docEmail = (data.email || data.participantEmail || '').toLowerCase();
+          const docUid = data.uid || d.id;
+          if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+            await deleteDoc(doc(db, 'leaderboard', d.id));
+          }
+        }
+      } catch {}
+
+      // 5. Update local React states
       setAttempts((prev) =>
         prev.filter(
           (a) =>
-            a.uid !== participant.uid &&
-            a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+            (cleanUid ? a.uid !== cleanUid : true) &&
+            (cleanEmail ? a.participantEmail?.toLowerCase() !== cleanEmail : true)
         )
       );
       setSubmissions((prev) =>
         prev.filter(
           (s) =>
-            s.uid !== participant.uid &&
-            s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+            (cleanUid ? s.uid !== cleanUid : true) &&
+            (cleanEmail ? s.participantEmail?.toLowerCase() !== cleanEmail : true)
         )
       );
+      setRegisteredUsers((prev) =>
+        prev.filter(
+          (u) =>
+            (cleanUid ? u.uid !== cleanUid : true) &&
+            (cleanEmail ? u.email?.toLowerCase() !== cleanEmail : true)
+        )
+      );
+
+      // If active local user was deleted, clear storage
+      if (
+        (currentUser && cleanUid && currentUser.uid === cleanUid) ||
+        (currentUser && cleanEmail && currentUser.email?.toLowerCase() === cleanEmail)
+      ) {
+        localStorage.removeItem('sh_circuit_user');
+        window.location.href = '/';
+      }
 
       await logAdminAction({
         eventType: 'PARTICIPANT_DELETED',
         category: 'ADMIN',
         severity: 'WARN',
-        details: `Participant "${participant.name}" (${participant.email}) was deleted by admin along with all attempts and answer scripts.`,
+        details: `Participant "${participant.name}" (${participant.email}) was completely and permanently deleted from server and database.`,
         metadata: { uid: participant.uid, email: participant.email, name: participant.name }
       });
     } catch (err) {
@@ -1024,6 +1092,9 @@ function MainApp() {
 
   const handleResetAttempt = async (participant: { uid: string; email: string }) => {
     try {
+      const cleanEmail = (participant.email || '').trim().toLowerCase();
+      const cleanUid = (participant.uid || '').trim();
+
       const idToken = await getIdToken();
       try {
         await fetch('/api/admin/reset-attempt', {
@@ -1036,52 +1107,88 @@ function MainApp() {
         });
       } catch {}
 
+      // 1. Delete all attempts for this participant
       try {
         const snapAtt = await getDocs(collection(db, 'attempts'));
         for (const d of snapAtt.docs) {
           const data = d.data();
-          if (
-            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
-            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
-          ) {
+          const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+          const matchesEmail = cleanEmail && (
+            (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+            (data.email && data.email.toLowerCase() === cleanEmail)
+          );
+          if (matchesUid || matchesEmail) {
             await deleteDoc(doc(db, 'attempts', d.id));
           }
         }
       } catch {}
 
+      // 2. Delete all submissions for this participant
       try {
         const snapSub = await getDocs(collection(db, 'submissions'));
         for (const d of snapSub.docs) {
           const data = d.data();
-          if (
-            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
-            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
-          ) {
+          const matchesUid = cleanUid && (data.uid === cleanUid || d.id === cleanUid || d.id.includes(cleanUid));
+          const matchesEmail = cleanEmail && (
+            (data.participantEmail && data.participantEmail.toLowerCase() === cleanEmail) ||
+            (data.email && data.email.toLowerCase() === cleanEmail)
+          );
+          if (matchesUid || matchesEmail) {
             await deleteDoc(doc(db, 'submissions', d.id));
           }
         }
       } catch {}
 
+      // 3. Delete leaderboard entries
+      try {
+        const snapLead = await getDocs(collection(db, 'leaderboard'));
+        for (const d of snapLead.docs) {
+          const data = d.data();
+          const docEmail = (data.email || data.participantEmail || '').toLowerCase();
+          const docUid = data.uid || d.id;
+          if ((cleanEmail && docEmail === cleanEmail) || (cleanUid && docUid === cleanUid)) {
+            await deleteDoc(doc(db, 'leaderboard', d.id));
+          }
+        }
+      } catch {}
+
+      // 4. Update React state
       setAttempts((prev) =>
         prev.filter(
           (a) =>
-            a.uid !== participant.uid &&
-            a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+            (cleanUid ? a.uid !== cleanUid : true) &&
+            (cleanEmail ? a.participantEmail?.toLowerCase() !== cleanEmail : true)
         )
       );
       setSubmissions((prev) =>
         prev.filter(
           (s) =>
-            s.uid !== participant.uid &&
-            s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+            (cleanUid ? s.uid !== cleanUid : true) &&
+            (cleanEmail ? s.participantEmail?.toLowerCase() !== cleanEmail : true)
         )
       );
+
+      // If resetting the currently active session user, unlock quiz view immediately
+      if (
+        (currentUser && cleanUid && currentUser.uid === cleanUid) ||
+        (currentUser && cleanEmail && currentUser.email?.toLowerCase() === cleanEmail)
+      ) {
+        setHasAttempted(false);
+        setActiveSession(null);
+        try {
+          Object.keys(sessionStorage).forEach((key) => {
+            if (key.startsWith('aec_quiz_answers_')) {
+              sessionStorage.removeItem(key);
+            }
+          });
+        } catch {}
+      }
 
       await logAdminAction({
         eventType: 'ATTEMPT_RESET',
         category: 'ADMIN',
         severity: 'WARN',
-        details: `Attempt for participant (${participant.email}) was reset by admin. Participant is granted a fresh attempt.`,
+        details: `Quiz attempt for participant (${participant.email}) was completely reset by admin. Participant is granted a fresh attempt.`,
         metadata: { uid: participant.uid, email: participant.email }
       });
     } catch (err) {
@@ -1397,6 +1504,7 @@ function MainApp() {
               attempts={attempts}
               submissions={submissions}
               questions={questions}
+              users={registeredUsers}
               onDeleteParticipant={handleDeleteParticipant}
               onResetAttempt={handleResetAttempt}
             />
