@@ -27,7 +27,14 @@ export const QuizInterface: React.FC<QuizInterfaceProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    try {
+      const stored = sessionStorage.getItem(`aec_quiz_answers_${attemptId}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
   const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
     const remaining = Math.max(0, Math.floor((new Date(deadline).getTime() - Date.now()) / 1000));
     return isNaN(remaining) ? durationSeconds : remaining;
@@ -39,6 +46,12 @@ export const QuizInterface: React.FC<QuizInterfaceProps> = ({
 
   const answersRef = useRef(answers);
   answersRef.current = answers;
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`aec_quiz_answers_${attemptId}`, JSON.stringify(answers));
+    } catch {}
+  }, [answers, attemptId]);
 
   const currentQuestion = questions[currentIndex] || questions[0];
 

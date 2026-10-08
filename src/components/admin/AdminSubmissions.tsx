@@ -50,22 +50,51 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
   const [exportMode, setExportMode] = useState<ExportMode>('ledger');
   const [targetSubmissions, setTargetSubmissions] = useState<SubmissionRecord[]>([]);
 
+  const isAnswerCorrect = (chosen: any, correctAnswer: any): boolean => {
+    if (chosen === undefined || chosen === null || correctAnswer === undefined || correctAnswer === null) {
+      return false;
+    }
+    const cleanChosen = String(chosen).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+    const cleanCorrect = String(correctAnswer).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+
+    if (cleanChosen === cleanCorrect && cleanChosen.length > 0) return true;
+
+    const letterMap: Record<string, string> = { '0': 'A', '1': 'B', '2': 'C', '3': 'D' };
+    const letterFromChosen = letterMap[cleanChosen] || cleanChosen;
+    const letterFromCorrect = letterMap[cleanCorrect] || cleanCorrect;
+
+    return letterFromChosen === letterFromCorrect && letterFromChosen.length > 0;
+  };
+
   const questionMap = useMemo(() => {
     const map = new Map<string, QuestionItem>();
-    questions.forEach((q) => map.set(q.id, q));
+    questions.forEach((q) => {
+      map.set(q.id, q);
+      map.set(q.id.toLowerCase(), q);
+    });
     return map;
   }, [questions]);
 
   // Helper to extract question items for a submission record
   const getSubmissionQuestions = (sub: SubmissionRecord) => {
     const attempt = attempts.find(
-      (a) => a.id === sub.attemptId || a.id === sub.id || a.uid === sub.uid
+      (a) =>
+        (sub.attemptId && a.id === sub.attemptId) ||
+        (sub.id && a.id === sub.id) ||
+        (sub.uid && a.uid === sub.uid) ||
+        (sub.participantEmail && a.participantEmail?.toLowerCase() === sub.participantEmail.toLowerCase())
     );
+
+    const mergedAnswers: Record<string, string> = {
+      ...((attempt as any)?.answers || {}),
+      ...(sub.answers || {}),
+    };
+
     let questionIds: string[] = [];
     if (attempt?.selectedQuestionIds && attempt.selectedQuestionIds.length > 0) {
       questionIds = [...attempt.selectedQuestionIds];
-    } else if (sub.answers && Object.keys(sub.answers).length > 0) {
-      questionIds = Object.keys(sub.answers);
+    } else if (Object.keys(mergedAnswers).length > 0) {
+      questionIds = Object.keys(mergedAnswers);
     } else {
       questionIds = questions.slice(0, sub.totalQuestions || 25).map((q) => q.id);
     }
@@ -76,17 +105,17 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     }
 
     return uniqueIds.map((qId, idx) => {
-      const q = questionMap.get(qId);
-      const chosen = sub.answers ? sub.answers[qId] : undefined;
-      const isAnswered = chosen !== undefined && chosen !== null && chosen !== '';
-      const isCorrect = isAnswered && q && String(chosen).toUpperCase() === q.correctAnswer.toUpperCase();
+      const q = questionMap.get(qId) || questionMap.get(qId.toLowerCase());
+      const chosen = mergedAnswers[qId] ?? mergedAnswers[qId.toLowerCase()];
+      const isAnswered = chosen !== undefined && chosen !== null && String(chosen).trim() !== '' && String(chosen).trim().toLowerCase() !== 'unanswered' && String(chosen).trim().toLowerCase() !== 'skipped';
+      const isCorrect = isAnswered && q && isAnswerCorrect(chosen, q.correctAnswer);
       return {
         index: idx + 1,
         qId,
         question: q,
-        chosen: isAnswered ? String(chosen).toUpperCase() : null,
+        chosen: isAnswered ? String(chosen).toUpperCase().replace(/^OPTION\s*/i, '').trim() : null,
         isAnswered,
-        isCorrect,
+        isCorrect: Boolean(isCorrect),
       };
     });
   };
@@ -117,26 +146,27 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
       const uniqueQIds = Array.from(new Set(questionIds));
 
       uniqueQIds.forEach((qId) => {
-        const chosen = answers[qId];
-        const q = questionMap.get(qId);
-        if (chosen !== undefined && chosen !== null && chosen !== '') {
+        const chosen = answers[qId] ?? answers[qId.toLowerCase()];
+        const q = questionMap.get(qId) || questionMap.get(qId.toLowerCase());
+        const isAnswered = chosen !== undefined && chosen !== null && String(chosen).trim() !== '' && String(chosen).trim().toLowerCase() !== 'unanswered' && String(chosen).trim().toLowerCase() !== 'skipped';
+        if (isAnswered) {
           attempted++;
-          if (q) {
-            const sel = String(chosen).trim().toUpperCase();
-            const corr = String(q.correctAnswer).trim().toUpperCase();
-            if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
-              correct++;
-            } else {
-              wrong++;
-            }
+          if (q && isAnswerCorrect(chosen, q.correctAnswer)) {
+            correct++;
           } else {
             wrong++;
           }
         }
       });
 
+      let score = correct;
+      if (score === 0 && raw.score !== undefined && raw.score !== null && raw.score > 0) {
+        score = raw.score;
+        correct = raw.correct ?? raw.score;
+        wrong = raw.wrong ?? 0;
+      }
+
       const totalQ = uniqueQIds.length > 0 ? uniqueQIds.length : (raw.totalQuestions || 25);
-      const score = correct; // 1 mark per verified correct answer
       const timeUsed = raw.timeUsed ?? (raw.submittedAt && raw.startedAt ? Math.max(1, Math.round((new Date(raw.submittedAt).getTime() - new Date(raw.startedAt).getTime()) / 1000)) : 120);
 
       const record: SubmissionRecord = {
@@ -170,7 +200,6 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
       if (!existing) {
         userMap.set(userKey, record);
       } else {
-        // Prefer record with valid submitted answers or highest score / latest submission
         const existingAttempted = Object.keys(existing.answers || {}).length;
         const currentAttempted = Object.keys(answers).length;
 

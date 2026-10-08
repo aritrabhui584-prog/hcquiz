@@ -22,9 +22,28 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [resettingUid, setResettingUid] = useState<string | null>(null);
 
+  const isAnswerCorrect = (chosen: any, correctAnswer: any): boolean => {
+    if (chosen === undefined || chosen === null || correctAnswer === undefined || correctAnswer === null) {
+      return false;
+    }
+    const cleanChosen = String(chosen).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+    const cleanCorrect = String(correctAnswer).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+
+    if (cleanChosen === cleanCorrect && cleanChosen.length > 0) return true;
+
+    const letterMap: Record<string, string> = { '0': 'A', '1': 'B', '2': 'C', '3': 'D' };
+    const letterFromChosen = letterMap[cleanChosen] || cleanChosen;
+    const letterFromCorrect = letterMap[cleanCorrect] || cleanCorrect;
+
+    return letterFromChosen === letterFromCorrect && letterFromChosen.length > 0;
+  };
+
   const questionMap = useMemo(() => {
     const map = new Map<string, QuestionItem>();
-    questions.forEach((q) => map.set(q.id, q));
+    questions.forEach((q) => {
+      map.set(q.id, q);
+      map.set(q.id.toLowerCase(), q);
+    });
     return map;
   }, [questions]);
 
@@ -63,18 +82,19 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     let attempted = (a as any).attempted ?? null;
 
     if (Object.keys(answers).length > 0) {
-      attempted = Object.keys(answers).length;
       let correct = 0;
+      let count = 0;
       Object.entries(answers).forEach(([qId, chosen]) => {
-        const q = questionMap.get(qId);
-        if (q && chosen) {
-          const sel = String(chosen).trim().toUpperCase();
-          const corr = String(q.correctAnswer).trim().toUpperCase();
-          if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+        const isAnswered = chosen !== undefined && chosen !== null && String(chosen).trim() !== '' && String(chosen).trim().toLowerCase() !== 'unanswered' && String(chosen).trim().toLowerCase() !== 'skipped';
+        if (isAnswered) {
+          count++;
+          const q = questionMap.get(qId) || questionMap.get(qId.toLowerCase());
+          if (q && isAnswerCorrect(chosen, q.correctAnswer)) {
             correct++;
           }
         }
       });
+      attempted = count;
       computedScore = correct;
     } else if (isSubmitted && (computedScore === null || computedScore === undefined)) {
       computedScore = 0;
@@ -104,19 +124,23 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
 
     const subAnswers = s.answers || {};
     let subScore = s.score ?? 0;
+    let subAttempted = s.attempted ?? null;
+
     if (Object.keys(subAnswers).length > 0) {
       let correct = 0;
+      let count = 0;
       Object.entries(subAnswers).forEach(([qId, chosen]) => {
-        const q = questionMap.get(qId);
-        if (q && chosen) {
-          const sel = String(chosen).trim().toUpperCase();
-          const corr = String(q.correctAnswer).trim().toUpperCase();
-          if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+        const isAnswered = chosen !== undefined && chosen !== null && String(chosen).trim() !== '' && String(chosen).trim().toLowerCase() !== 'unanswered' && String(chosen).trim().toLowerCase() !== 'skipped';
+        if (isAnswered) {
+          count++;
+          const q = questionMap.get(qId) || questionMap.get(qId.toLowerCase());
+          if (q && isAnswerCorrect(chosen, q.correctAnswer)) {
             correct++;
           }
         }
       });
       subScore = correct;
+      subAttempted = count;
     }
 
     participantMap.set(userKey, {

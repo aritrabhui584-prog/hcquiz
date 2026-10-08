@@ -554,19 +554,30 @@ function MainApp() {
         let wrong = 0;
         let attempted = 0;
 
+        const isAnswerCorrect = (chosen: any, correctAnswer: any): boolean => {
+          if (chosen === undefined || chosen === null || correctAnswer === undefined || correctAnswer === null) {
+            return false;
+          }
+          const cleanChosen = String(chosen).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+          const cleanCorrect = String(correctAnswer).trim().toUpperCase().replace(/^OPTION\s*/i, '').replace(/[\.\:\)]/g, '').trim();
+
+          if (cleanChosen === cleanCorrect && cleanChosen.length > 0) return true;
+
+          const letterMap: Record<string, string> = { '0': 'A', '1': 'B', '2': 'C', '3': 'D' };
+          const letterFromChosen = letterMap[cleanChosen] || cleanChosen;
+          const letterFromCorrect = letterMap[cleanCorrect] || cleanCorrect;
+
+          return letterFromChosen === letterFromCorrect && letterFromChosen.length > 0;
+        };
+
         activeSession.questions.forEach((q) => {
-          const selected = answers[q.id];
-          if (selected !== undefined && selected !== null && selected !== '') {
+          const selected = answers[q.id] ?? answers[q.id.toLowerCase()];
+          const isAnswered = selected !== undefined && selected !== null && String(selected).trim() !== '' && String(selected).trim().toLowerCase() !== 'unanswered' && String(selected).trim().toLowerCase() !== 'skipped';
+          if (isAnswered) {
             attempted += 1;
-            const fullQ = qMap.get(q.id);
-            if (fullQ) {
-              const sel = String(selected).trim().toUpperCase();
-              const corr = String(fullQ.correctAnswer).trim().toUpperCase();
-              if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
-                correct += 1;
-              } else {
-                wrong += 1;
-              }
+            const fullQ = qMap.get(q.id) || qMap.get(q.id.toLowerCase());
+            if (fullQ && isAnswerCorrect(selected, fullQ.correctAnswer)) {
+              correct += 1;
             } else {
               wrong += 1;
             }
