@@ -72,10 +72,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       <aside className="w-full md:w-64 bg-[#070b0e] border-r border-emerald-500/20 flex flex-col shrink-0 select-none">
         {/* Brand Banner */}
         <div className="p-4 border-b border-emerald-500/20">
-          <div className="flex items-center gap-3">
-            <HeaderLogo size={32} className="shrink-0 rounded-full border border-emerald-500/30 p-0.5 bg-slate-950/80 shadow-[0_0_10px_rgba(16,185,129,0.2)]" />
+          <div
+            onClick={onExitToApp}
+            title="Click to return to public circuit"
+            className="flex items-center gap-3 cursor-pointer group p-1 -m-1 rounded-xl hover:bg-slate-900/60 transition"
+          >
+            <HeaderLogo size={32} className="shrink-0 rounded-full border border-emerald-500/30 p-0.5 bg-slate-950/80 shadow-[0_0_10px_rgba(16,185,129,0.2)] group-hover:scale-105 transition-transform" />
             <div>
-              <h2 className="font-mono text-xs font-black tracking-widest text-white uppercase">
+              <h2 className="font-mono text-xs font-black tracking-widest text-white uppercase group-hover:text-emerald-300 transition-colors">
                 AEC ADMIN CONSOLE
               </h2>
               <p className="font-mono text-[10px] text-emerald-400/80">HARDWARE QUIZ CONTROLLER</p>
@@ -140,17 +144,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </button>
 
           {/* Exit to Public App */}
-          <button
-            type="button"
+          <a
+            href="/"
             onClick={(e) => {
               e.preventDefault();
               onExitToApp();
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-700 hover:border-emerald-500/50 bg-slate-900/60 hover:bg-slate-800 text-slate-200 hover:text-emerald-300 font-mono text-xs font-semibold transition cursor-pointer active:scale-95 shadow-sm"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-700 hover:border-emerald-500/50 bg-slate-900/60 hover:bg-slate-800 text-slate-200 hover:text-emerald-300 font-mono text-xs font-semibold transition cursor-pointer active:scale-95 shadow-sm text-center select-none"
           >
-            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>RETURN TO PUBLIC APP</span>
-          </button>
+          </a>
 
           {/* User Info & Logout */}
           <div className="pt-2 flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800">
@@ -169,6 +173,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* Top Quick Bar */}
+        <div className="w-full border-b border-slate-800 bg-[#070b0e]/60 px-4 sm:px-8 py-2.5 flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2 text-slate-400">
+            <span>AEC Hardware Console</span>
+            <span className="text-slate-600">/</span>
+            <span className="text-emerald-400 capitalize">{currentTab.replace('-', ' ')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onExitToApp}
+            className="inline-flex items-center gap-1.5 text-slate-400 hover:text-white transition cursor-pointer px-2.5 py-1 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900/40"
+          >
+            <ArrowLeft className="w-3 h-3 text-emerald-400" />
+            <span>Public Site</span>
+          </button>
+        </div>
         <div className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto">
           {children}
         </div>

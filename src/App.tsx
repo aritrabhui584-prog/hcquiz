@@ -626,7 +626,12 @@ function MainApp() {
           quizStatus={currentQuiz?.status}
           quizTitle={currentQuiz?.title}
           onOpenPreview={() => setPreviewModalOpen(true)}
-          onExitToApp={() => navigate('/')}
+          onExitToApp={() => {
+            navigate('/');
+            if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+              window.location.href = '/';
+            }
+          }}
         >
           {adminTab === 'dashboard' && (
             <AdminDashboardHome
