@@ -51,7 +51,7 @@ import {
 import { DEFAULT_QUESTIONS } from './data/defaultQuestions';
 
 function MainApp() {
-  const { currentUser, userProfile, isAdmin, getIdToken, login } = useAuth();
+  const { currentUser, userProfile, isAdmin, isLoading, getIdToken, login } = useAuth();
 
   // Navigation State
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
@@ -895,7 +895,16 @@ function MainApp() {
   const renderRoute = () => {
     // 1. Admin Routes - Strictly locked to hardcoded registered admin emails
     if (currentRoute.startsWith('/admin')) {
-      if (!currentUser || !isAdmin || !isAuthorizedAdminEmail(currentUser.email)) {
+      if (isLoading) {
+        return (
+          <div className="w-full min-h-screen flex flex-col items-center justify-center bg-[#05080b] text-emerald-400 font-mono text-xs gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-emerald-400/20 border-t-emerald-400 animate-spin" />
+            <span className="tracking-widest">VERIFYING ADMINISTRATIVE ACCESS...</span>
+          </div>
+        );
+      }
+
+      if (!currentUser || (!isAdmin && !isAuthorizedAdminEmail(currentUser.email))) {
         return (
           <div className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center p-6 text-center select-none">
             <div className="px-3 py-1 rounded-full bg-[#B62A35]/15 border border-[#B62A35]/30 text-[#B62A35] font-mono-tech text-[11px] tracking-widest mb-3 uppercase">
@@ -940,7 +949,12 @@ function MainApp() {
               questionBankCount={questions.length}
               onUpdateQuizStatus={handleUpdateQuizStatus}
               onNavigateTab={setAdminTab}
-              onRefreshStats={syncAdminData}
+              onRefreshStats={async () => {
+                const snapAtt = await getDocs(collection(db, 'attempts'));
+                setAttempts(snapAtt.docs.map((d) => ({ id: d.id, ...d.data() } as AttemptRecord)));
+                const snapSub = await getDocs(collection(db, 'submissions'));
+                setSubmissions(snapSub.docs.map((d) => ({ id: d.id, ...d.data() } as SubmissionRecord)));
+              }}
             />
           )}
 
