@@ -14,12 +14,13 @@ import {
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
-import { SubmissionRecord, PublishedWinner, QuizEdition } from '../../types/quiz';
+import { SubmissionRecord, PublishedWinner, QuizEdition, AttemptRecord } from '../../types/quiz';
 import { useAuth } from '../../context/AuthContext';
 
 interface AdminWinnerManagementProps {
   currentQuiz: QuizEdition | null;
   submissions: SubmissionRecord[];
+  attempts?: AttemptRecord[];
   currentWinners: PublishedWinner | null;
   onPublishWinners: (winnersData: Partial<PublishedWinner>) => Promise<void>;
   onUnpublishWinners: () => Promise<void>;
@@ -28,27 +29,84 @@ interface AdminWinnerManagementProps {
 export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
   currentQuiz,
   submissions,
+  attempts = [],
   currentWinners,
   onPublishWinners,
   onUnpublishWinners,
 }) => {
   const { getIdToken } = useAuth();
 
-  // Sort candidates by score descending, then time ascending
-  const rankedCandidates = [...submissions].sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.timeUsed - b.timeUsed;
-  });
+  // Combine submissions and submitted attempts, sorted by score desc, time asc
+  const rankedCandidates = React.useMemo(() => {
+    const map = new Map<string, SubmissionRecord>();
+    submissions.forEach((s) => {
+      map.set(s.uid || s.id, s);
+    });
+
+    attempts.forEach((a) => {
+      if (a.status === 'SUBMITTED' || a.finalized || a.submittedAt || (a as any).score !== undefined) {
+        if (!map.has(a.uid) && !map.has(a.id)) {
+          const elapsed = a.submittedAt && a.startedAt
+            ? Math.max(1, Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
+            : a.durationSeconds;
+          map.set(a.uid, {
+            id: `sub_${a.id}`,
+            attemptId: a.id,
+            uid: a.uid,
+            quizId: a.quizId,
+            quizTitle: 'SHARADIYA CIRCUIT 2026',
+            participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
+            participantEmail: a.participantEmail || '',
+            participantPhone: a.participantPhone || 'N/A',
+            participantPhotoUrl: a.participantPhotoUrl,
+            stream: a.stream || '',
+            year: a.year || '',
+            rollNo: a.rollNo || '',
+            membershipId: a.membershipId || '',
+            answers: (a as any).answers || {},
+            totalQuestions: a.selectedQuestionIds?.length || 25,
+            attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : a.selectedQuestionIds?.length || 25),
+            correct: (a as any).score ?? 0,
+            wrong: 0,
+            score: (a as any).score ?? 0,
+            startedAt: a.startedAt,
+            submittedAt: a.submittedAt || a.startedAt,
+            timeUsed: (a as any).timeUsed ?? elapsed,
+            syncedToSheets: false,
+            createdAt: a.submittedAt || a.startedAt,
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+      return (a.timeUsed ?? 0) - (b.timeUsed ?? 0);
+    });
+  }, [submissions, attempts]);
 
   const [firstPlaceUid, setFirstPlaceUid] = useState<string>(
-    currentWinners?.firstPlace?.uid || rankedCandidates[0]?.uid || ''
+    currentWinners?.firstPlace?.uid || ''
   );
   const [secondPlaceUid, setSecondPlaceUid] = useState<string>(
-    currentWinners?.secondPlace?.uid || rankedCandidates[1]?.uid || ''
+    currentWinners?.secondPlace?.uid || ''
   );
   const [thirdPlaceUid, setThirdPlaceUid] = useState<string>(
-    currentWinners?.thirdPlace?.uid || rankedCandidates[2]?.uid || ''
+    currentWinners?.thirdPlace?.uid || ''
   );
+
+  // Sync default winner selections whenever ranked candidates populate
+  React.useEffect(() => {
+    if (!firstPlaceUid && rankedCandidates[0]) {
+      setFirstPlaceUid(rankedCandidates[0].uid);
+    }
+    if (!secondPlaceUid && rankedCandidates[1]) {
+      setSecondPlaceUid(rankedCandidates[1].uid);
+    }
+    if (!thirdPlaceUid && rankedCandidates[2]) {
+      setThirdPlaceUid(rankedCandidates[2].uid);
+    }
+  }, [rankedCandidates, firstPlaceUid, secondPlaceUid, thirdPlaceUid]);
 
   const [firstTitle, setFirstTitle] = useState(
     currentWinners?.firstPlace?.badgeTitle || 'Grand Hardware Champion'

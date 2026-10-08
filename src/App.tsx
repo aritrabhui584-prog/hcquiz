@@ -1005,6 +1005,7 @@ function MainApp() {
             <AdminWinnerManagement
               currentQuiz={currentQuiz}
               submissions={submissions}
+              attempts={attempts}
               currentWinners={currentWinners}
               onPublishWinners={handlePublishWinners}
               onUnpublishWinners={handleUnpublishWinners}
