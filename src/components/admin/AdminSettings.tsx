@@ -11,15 +11,17 @@ import {
   HelpCircle,
   ExternalLink
 } from 'lucide-react';
-import { SubmissionRecord } from '../../types/quiz';
+import { SubmissionRecord, AttemptRecord } from '../../types/quiz';
 
 interface AdminSettingsProps {
   submissions: SubmissionRecord[];
+  attempts?: AttemptRecord[];
   onTriggerSync: () => Promise<{ totalPending: number; syncedCount: number; errors: string[] }>;
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({
   submissions,
+  attempts = [],
   onTriggerSync,
 }) => {
   const [syncing, setSyncing] = useState(false);
@@ -30,8 +32,31 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   } | null>(null);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
-  const syncedCount = submissions.filter((s) => s.syncedToSheets).length;
-  const pendingCount = submissions.filter((s) => !s.syncedToSheets).length;
+  // Combine direct submissions collection with any submitted attempt records
+  const allSubmissionsList = React.useMemo(() => {
+    const map = new Map<string, { id: string; syncedToSheets: boolean }>();
+    submissions.forEach((s) => {
+      const k = (s.uid || s.participantEmail || s.id || '').toLowerCase();
+      if (k) map.set(k, { id: s.id, syncedToSheets: Boolean(s.syncedToSheets) });
+    });
+    attempts.forEach((a) => {
+      const isPastDeadline = a.deadline
+        ? new Date(a.deadline).getTime() <= Date.now()
+        : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
+      const isSubmitted = a.status === 'SUBMITTED' || a.status === 'TIMED_OUT' || a.finalized || Boolean(a.submittedAt) || isPastDeadline || Boolean((a as any).answers && Object.keys((a as any).answers).length > 0);
+      if (isSubmitted) {
+        const k = (a.uid || a.participantEmail || a.id || '').toLowerCase();
+        if (k && !map.has(k)) {
+          map.set(k, { id: a.id, syncedToSheets: Boolean((a as any).syncedToSheets) });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [submissions, attempts]);
+
+  const totalSubmissionsCount = allSubmissionsList.length;
+  const syncedCount = allSubmissionsList.filter((s) => s.syncedToSheets).length;
+  const pendingCount = totalSubmissionsCount - syncedCount;
 
   const handleSync = async () => {
     try {
@@ -116,7 +141,7 @@ function doPost(e) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center font-mono">
             <span className="text-[10px] text-slate-500 uppercase block">TOTAL SUBMISSIONS</span>
-            <span className="text-2xl font-bold text-white">{submissions.length}</span>
+            <span className="text-2xl font-bold text-white">{totalSubmissionsCount}</span>
           </div>
 
           <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/30 text-center font-mono">

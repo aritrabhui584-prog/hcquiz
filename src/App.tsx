@@ -239,10 +239,28 @@ function MainApp() {
 
     try {
       unsubAudit = onSnapshot(collection(db, 'audit_logs'), (snap) => {
-        const logs = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as AuditLogItem))
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setAuditLogs(logs);
+        if (snap.empty) {
+          const initLogId = `log_init_${Date.now()}`;
+          const initLog: AuditLogItem = {
+            id: initLogId,
+            eventType: 'SYSTEM_READY',
+            actorEmail: 'system@aec-hardware.org',
+            actorRole: 'SYSTEM',
+            targetId: currentQuiz?.id || 'sharadiya-circuit-2026',
+            details: 'AEC Hardware Console audit monitoring online. Real-time audit trails active.',
+            severity: 'INFO',
+            ipAddress: 'INTERNAL_GATEWAY',
+            timestamp: new Date().toISOString(),
+            metadata: { version: '2.0.0-PROD' },
+          };
+          setDoc(doc(db, 'audit_logs', initLogId), initLog).catch(() => {});
+          setAuditLogs([initLog]);
+        } else {
+          const logs = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as AuditLogItem))
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          setAuditLogs(logs);
+        }
       });
     } catch (err) {
       console.warn('Audit logs realtime listener notice:', err);
@@ -494,6 +512,21 @@ function MainApp() {
         });
       }
 
+      const startLogId = `log_start_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      setDoc(doc(db, 'audit_logs', startLogId), {
+        id: startLogId,
+        eventType: 'QUIZ_START',
+        actorEmail: currentUser.email || 'participant',
+        actorName: userProfile?.name || currentUser.displayName || 'Participant',
+        actorRole: 'PARTICIPANT',
+        targetId: currentQuiz?.id || 'sharadiya-circuit-2026',
+        details: `Participant ${currentUser.email || currentUser.displayName} initiated quiz attempt session.`,
+        severity: 'INFO',
+        ipAddress: 'WEB_CLIENT',
+        timestamp: new Date().toISOString(),
+        metadata: { uid: currentUser.uid, quizId: currentQuiz?.id }
+      }).catch(() => {});
+
       soundEffects.playQuizStart();
       navigate('/quiz');
     } catch (err) {
@@ -588,6 +621,21 @@ function MainApp() {
             attempted,
             answers,
           });
+
+          const subLogId = `log_sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          await setDoc(doc(db, 'audit_logs', subLogId), {
+            id: subLogId,
+            eventType: 'QUIZ_SUBMIT',
+            actorEmail: currentUser.email || 'participant',
+            actorName: userProfile?.name || currentUser.displayName || 'Participant',
+            actorRole: 'PARTICIPANT',
+            targetId: activeSession.attemptId,
+            details: `Participant ${currentUser.email} submitted answers with verified score ${correct}/${activeSession.questions.length || 25} in ${actualTimeUsed}s.`,
+            severity: 'INFO',
+            ipAddress: 'WEB_CLIENT',
+            timestamp: submittedAtIso,
+            metadata: { attemptId: activeSession.attemptId, score: correct, timeUsed: actualTimeUsed }
+          });
         } catch (dbErr) {
           console.warn('Firestore direct submission notice:', dbErr);
         }
@@ -633,6 +681,27 @@ function MainApp() {
     details: string;
     metadata?: Record<string, any>;
   }) => {
+    const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const logItem: AuditLogItem = {
+      id: logId,
+      eventType: params.eventType,
+      actorEmail: currentUser?.email || 'admin@aec-hardware.org',
+      actorName: currentUser?.displayName || 'Admin',
+      actorRole: 'ADMIN',
+      targetId: params.metadata?.quizId || params.metadata?.targetId || 'SYSTEM',
+      details: params.details,
+      severity: (params.severity as any) || 'INFO',
+      ipAddress: 'ADMIN_CONSOLE',
+      timestamp: new Date().toISOString(),
+      metadata: params.metadata || {},
+    };
+
+    try {
+      await setDoc(doc(db, 'audit_logs', logId), logItem);
+    } catch (err) {
+      console.warn('Audit direct Firestore write notice:', err);
+    }
+
     try {
       const idToken = await getIdToken();
       await fetch('/api/admin/log-event', {
@@ -801,6 +870,14 @@ function MainApp() {
             s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
         )
       );
+
+      await logAdminAction({
+        eventType: 'PARTICIPANT_DELETED',
+        category: 'ADMIN',
+        severity: 'WARN',
+        details: `Participant "${participant.name}" (${participant.email}) was deleted by admin along with all attempts and answer scripts.`,
+        metadata: { uid: participant.uid, email: participant.email, name: participant.name }
+      });
     } catch (err) {
       console.error('Delete participant error:', err);
       throw err;
@@ -861,6 +938,14 @@ function MainApp() {
             s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
         )
       );
+
+      await logAdminAction({
+        eventType: 'ATTEMPT_RESET',
+        category: 'ADMIN',
+        severity: 'WARN',
+        details: `Attempt for participant (${participant.email}) was reset by admin. Participant is granted a fresh attempt.`,
+        metadata: { uid: participant.uid, email: participant.email }
+      });
     } catch (err) {
       console.error('Reset attempt error:', err);
       throw err;
@@ -1028,6 +1113,50 @@ function MainApp() {
     animationAssetUrl: q.animationAssetUrl,
   }));
 
+  const dashboardMetrics = useMemo(() => {
+    const allUsers = new Set<string>();
+    const startedUsers = new Set<string>();
+    const submittedUsers = new Set<string>();
+
+    submissions.forEach((s) => {
+      const key = (s.uid || s.participantEmail || s.id || '').toLowerCase();
+      if (key) {
+        allUsers.add(key);
+        startedUsers.add(key);
+        submittedUsers.add(key);
+      }
+    });
+
+    attempts.forEach((a) => {
+      const key = (a.uid || a.participantEmail || a.id || '').toLowerCase();
+      if (key) {
+        allUsers.add(key);
+        if (a.status === 'IN_PROGRESS' || a.status === 'SUBMITTED' || a.status === 'TIMED_OUT') {
+          startedUsers.add(key);
+        }
+        const isPastDeadline = a.deadline
+          ? new Date(a.deadline).getTime() <= Date.now()
+          : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
+        const isSubmitted =
+          a.status === 'SUBMITTED' ||
+          a.status === 'TIMED_OUT' ||
+          a.finalized === true ||
+          Boolean(a.submittedAt) ||
+          isPastDeadline ||
+          Boolean((a as any).answers && Object.keys((a as any).answers).length > 0);
+        if (isSubmitted) {
+          submittedUsers.add(key);
+        }
+      }
+    });
+
+    return {
+      participantCount: Math.max(allUsers.size, attempts.length, submissions.length),
+      startedCount: Math.max(startedUsers.size, attempts.length),
+      submittedCount: submittedUsers.size,
+    };
+  }, [attempts, submissions]);
+
   // ROUTE RENDERING
   const renderRoute = () => {
     // 1. Admin Routes - Strictly locked to hardcoded registered admin emails
@@ -1080,9 +1209,9 @@ function MainApp() {
           {adminTab === 'dashboard' && (
             <AdminDashboardHome
               quiz={currentQuiz}
-              participantCount={Math.max(attempts.length, submissions.length)}
-              startedCount={attempts.filter((a) => a.status === 'IN_PROGRESS' || a.status === 'SUBMITTED').length}
-              submittedCount={submissions.length}
+              participantCount={dashboardMetrics.participantCount}
+              startedCount={dashboardMetrics.startedCount}
+              submittedCount={dashboardMetrics.submittedCount}
               questionBankCount={questions.length}
               onUpdateQuizStatus={handleUpdateQuizStatus}
               onNavigateTab={setAdminTab}
@@ -1129,6 +1258,7 @@ function MainApp() {
             <AdminParticipants
               attempts={attempts}
               submissions={submissions}
+              questions={questions}
               onDeleteParticipant={handleDeleteParticipant}
               onResetAttempt={handleResetAttempt}
             />
@@ -1169,7 +1299,11 @@ function MainApp() {
           )}
 
           {adminTab === 'settings' && (
-            <AdminSettings submissions={submissions} onTriggerSync={handleTriggerSync} />
+            <AdminSettings
+              submissions={submissions}
+              attempts={attempts}
+              onTriggerSync={handleTriggerSync}
+            />
           )}
         </AdminLayout>
       );

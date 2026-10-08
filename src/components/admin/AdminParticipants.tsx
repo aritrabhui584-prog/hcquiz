@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
-import { SubmissionRecord, AttemptRecord } from '../../types/quiz';
+import { SubmissionRecord, AttemptRecord, QuestionItem } from '../../types/quiz';
 
 interface AdminParticipantsProps {
   attempts: AttemptRecord[];
   submissions: SubmissionRecord[];
+  questions?: QuestionItem[];
   onDeleteParticipant?: (participant: { uid: string; email: string; name: string }) => Promise<void>;
   onResetAttempt?: (participant: { uid: string; email: string }) => Promise<void>;
 }
@@ -12,6 +13,7 @@ interface AdminParticipantsProps {
 export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   attempts,
   submissions,
+  questions = [],
   onDeleteParticipant,
   onResetAttempt,
 }) => {
@@ -19,6 +21,12 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   const [deletingParticipant, setDeletingParticipant] = useState<{ uid: string; email: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [resettingUid, setResettingUid] = useState<string | null>(null);
+
+  const questionMap = useMemo(() => {
+    const map = new Map<string, QuestionItem>();
+    questions.forEach((q) => map.set(q.id, q));
+    return map;
+  }, [questions]);
 
   // Merge unique participants from attempts and submissions
   const participantMap = new Map<string, {
@@ -50,6 +58,28 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       ? Math.max(1, Math.round((new Date(effectiveSubmittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
       : (isPastDeadline ? a.durationSeconds || 120 : null);
 
+    const answers = (a as any).answers || {};
+    let computedScore: number | null = (a as any).score ?? null;
+    let attempted = (a as any).attempted ?? null;
+
+    if (Object.keys(answers).length > 0) {
+      attempted = Object.keys(answers).length;
+      let correct = 0;
+      Object.entries(answers).forEach(([qId, chosen]) => {
+        const q = questionMap.get(qId);
+        if (q && chosen) {
+          const sel = String(chosen).trim().toUpperCase();
+          const corr = String(q.correctAnswer).trim().toUpperCase();
+          if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+            correct++;
+          }
+        }
+      });
+      computedScore = correct;
+    } else if (isSubmitted && (computedScore === null || computedScore === undefined)) {
+      computedScore = 0;
+    }
+
     const userKey = (a.uid || a.participantEmail || a.id).toLowerCase();
     participantMap.set(userKey, {
       uid: a.uid || userKey,
@@ -62,15 +92,33 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       submittedAt: effectiveSubmittedAt,
       status: computedStatus,
       timeUsed: (a as any).timeUsed ?? elapsed,
-      score: (a as any).score ?? ((a as any).answers ? Object.keys((a as any).answers).length : null),
+      score: computedScore,
       totalQuestions: a.selectedQuestionIds?.length || 25,
-      attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : null),
+      attempted,
     });
   });
 
   submissions.forEach((s) => {
     const userKey = (s.uid || s.participantEmail || s.id).toLowerCase();
     const existing = participantMap.get(userKey);
+
+    const subAnswers = s.answers || {};
+    let subScore = s.score ?? 0;
+    if (Object.keys(subAnswers).length > 0) {
+      let correct = 0;
+      Object.entries(subAnswers).forEach(([qId, chosen]) => {
+        const q = questionMap.get(qId);
+        if (q && chosen) {
+          const sel = String(chosen).trim().toUpperCase();
+          const corr = String(q.correctAnswer).trim().toUpperCase();
+          if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+            correct++;
+          }
+        }
+      });
+      subScore = correct;
+    }
+
     participantMap.set(userKey, {
       uid: s.uid || existing?.uid || userKey,
       name: s.participantName || existing?.name || (s.participantEmail ? s.participantEmail.split('@')[0] : 'Participant'),
@@ -82,9 +130,9 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       submittedAt: s.submittedAt || existing?.submittedAt || s.createdAt,
       status: 'SUBMITTED',
       timeUsed: s.timeUsed ?? existing?.timeUsed ?? null,
-      score: s.score,
+      score: subScore,
       totalQuestions: s.totalQuestions || 25,
-      attempted: s.attempted,
+      attempted: s.attempted ?? (Object.keys(subAnswers).length || null),
     });
   });
 
@@ -202,10 +250,14 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                     <td className="p-3.5">
                       {p.score !== null ? (
                         <span className="font-black text-amber-400">
-                          {p.score} / {p.totalQuestions}
+                          {p.score} / {p.totalQuestions || 25}
+                        </span>
+                      ) : p.status === 'SUBMITTED' ? (
+                        <span className="font-black text-amber-400">
+                          0 / {p.totalQuestions || 25}
                         </span>
                       ) : (
-                        <span className="text-slate-600">—</span>
+                        <span className="text-slate-500 italic text-[11px]">In Progress</span>
                       )}
                     </td>
                     <td className="p-3.5 text-right">
