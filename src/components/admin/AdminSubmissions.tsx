@@ -22,10 +22,11 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import { SubmissionRecord, QuestionItem } from '../../types/quiz';
+import { SubmissionRecord, QuestionItem, AttemptRecord } from '../../types/quiz';
 
 interface AdminSubmissionsProps {
   submissions: SubmissionRecord[];
+  attempts?: AttemptRecord[];
   questions: QuestionItem[];
   onDeleteSubmission?: (submission: SubmissionRecord) => Promise<void>;
 }
@@ -34,6 +35,7 @@ type ExportMode = 'individual' | 'ledger' | 'dossier';
 
 export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
   submissions,
+  attempts = [],
   questions,
   onDeleteSubmission,
 }) => {
@@ -54,23 +56,70 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     return map;
   }, [questions]);
 
+  // Combine direct submissions collection with any submitted attempt records
+  const allSubmissions = useMemo(() => {
+    const map = new Map<string, SubmissionRecord>();
+    submissions.forEach((s) => {
+      map.set(s.id || s.attemptId || s.uid, s);
+    });
+
+    attempts.forEach((a) => {
+      if (a.status === 'SUBMITTED' || a.finalized || a.submittedAt) {
+        const subId = `sub_${a.id}`;
+        if (!map.has(subId) && !map.has(a.id)) {
+          const timeUsed = (a as any).timeUsed ?? (a.submittedAt && a.startedAt ? Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000) : a.durationSeconds);
+          map.set(subId, {
+            id: subId,
+            attemptId: a.id,
+            uid: a.uid,
+            quizId: a.quizId,
+            quizTitle: 'SHARADIYA CIRCUIT 2026',
+            participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
+            participantEmail: a.participantEmail || '',
+            participantPhone: a.participantPhone || 'N/A',
+            participantPhotoUrl: a.participantPhotoUrl,
+            stream: a.stream || '',
+            year: a.year || '',
+            rollNo: a.rollNo || '',
+            membershipId: a.membershipId || '',
+            answers: (a as any).answers || {},
+            totalQuestions: a.selectedQuestionIds?.length || 25,
+            attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : a.selectedQuestionIds?.length || 25),
+            correct: (a as any).score ?? (a as any).correct ?? 0,
+            wrong: (a as any).wrong ?? 0,
+            score: (a as any).score ?? 0,
+            startedAt: a.startedAt,
+            submittedAt: a.submittedAt || a.startedAt,
+            timeUsed,
+            syncedToSheets: false,
+            createdAt: a.submittedAt || a.startedAt,
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [submissions, attempts]);
+
   const sortedSubmissions = useMemo(() => {
-    return [...submissions]
-      .filter(
-        (s) =>
-          s.participantName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.participantEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (s.participantPhone && s.participantPhone.includes(searchTerm))
-      )
+    const term = searchTerm.trim().toLowerCase();
+    return allSubmissions
+      .filter((s) => {
+        if (!term) return true;
+        const name = (s.participantName || '').toLowerCase();
+        const email = (s.participantEmail || '').toLowerCase();
+        const phone = s.participantPhone || '';
+        return name.includes(term) || email.includes(term) || phone.includes(term);
+      })
       .sort((a, b) => {
         if (sortBy === 'score') {
-          if (b.score !== a.score) return b.score - a.score;
-          return a.timeUsed - b.timeUsed; // Tie-break with faster time
+          if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+          return (a.timeUsed ?? 0) - (b.timeUsed ?? 0); // Tie-break with faster time
         }
-        if (sortBy === 'time') return a.timeUsed - b.timeUsed;
-        return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+        if (sortBy === 'time') return (a.timeUsed ?? 0) - (b.timeUsed ?? 0);
+        return new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime();
       });
-  }, [submissions, searchTerm, sortBy]);
+  }, [allSubmissions, searchTerm, sortBy]);
 
   // Aggregate stats for filtered list
   const filterStats = useMemo(() => {

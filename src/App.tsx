@@ -995,6 +995,7 @@ function MainApp() {
           {adminTab === 'submissions' && (
             <AdminSubmissions
               submissions={submissions}
+              attempts={attempts}
               questions={questions}
               onDeleteSubmission={handleDeleteSubmission}
             />
