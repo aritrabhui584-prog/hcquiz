@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Trophy, ArrowLeft } from 'lucide-react';
+import lottie from 'lottie-web';
 import { soundEffects } from '../../lib/soundEffects';
+import doneAnimationData from '../../assets/done-animation.json';
 
 interface SubmissionResultProps {
   quizTitle: string;
@@ -16,8 +18,24 @@ export const SubmissionResult: React.FC<SubmissionResultProps> = ({
   onGoHome,
   onViewWinners,
 }) => {
+  const animationContainer = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     soundEffects.playSubmissionSuccess();
+
+    if (animationContainer.current) {
+      const anim = lottie.loadAnimation({
+        container: animationContainer.current,
+        renderer: 'svg',
+        loop: false,
+        autoplay: true,
+        animationData: doneAnimationData,
+      });
+
+      return () => {
+        anim.destroy();
+      };
+    }
   }, []);
 
   const easeVisual = [0.22, 1, 0.36, 1] as const;
@@ -37,30 +55,12 @@ export const SubmissionResult: React.FC<SubmissionResultProps> = ({
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         />
 
-        {/* Minimal Animated Circuit Pulse Node */}
-        <div className="relative inline-flex items-center justify-center mb-5">
-          <svg width="60" height="60" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="40" cy="40" r="36" stroke="rgba(255,255,255,0.12)" strokeWidth="1.2" strokeDasharray="3 4" />
-            <motion.circle
-              cx="40"
-              cy="40"
-              r="30"
-              stroke="#7EE8A6"
-              strokeWidth="1.5"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-            />
-            <circle cx="40" cy="40" r="8" fill="#7EE8A6" />
-            <motion.circle
-              cx="40"
-              cy="40"
-              r="16"
-              stroke="#7EE8A6"
-              strokeWidth="1"
-              animate={{ scale: [1, 1.5, 1], opacity: [0.8, 0, 0.8] }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </svg>
+        {/* Lottie Done Checkmark Animation */}
+        <div className="relative flex items-center justify-center -mt-2 mb-3">
+          <div
+            ref={animationContainer}
+            className="w-28 h-28 sm:w-32 sm:h-32 flex items-center justify-center pointer-events-none drop-shadow-[0_0_20px_rgba(80,208,92,0.35)]"
+          />
         </div>
 
         {/* Status Eyebrow (10–12px) */}
