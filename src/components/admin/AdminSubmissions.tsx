@@ -91,13 +91,101 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     });
   };
 
-  // Combine direct submissions collection with any submitted attempt records
+  // Combine direct submissions collection with any submitted attempt records (Strict 1 participant = 1 submission)
   const allSubmissions = useMemo(() => {
-    const map = new Map<string, SubmissionRecord>();
+    const userMap = new Map<string, SubmissionRecord>();
+
+    // Helper to evaluate and verify answers against the live Question Setter answer keys
+    const verifyAndAggregate = (raw: Partial<SubmissionRecord> & { attemptId?: string; selectedQuestionIds?: string[] }) => {
+      const userKey = (raw.uid || raw.participantEmail || raw.id || '').toLowerCase();
+      if (!userKey) return;
+
+      const answers = (raw.answers as Record<string, string>) || {};
+      let correct = 0;
+      let wrong = 0;
+      let attempted = 0;
+
+      // Extract question IDs
+      let questionIds: string[] = [];
+      if (raw.selectedQuestionIds && raw.selectedQuestionIds.length > 0) {
+        questionIds = raw.selectedQuestionIds;
+      } else if (Object.keys(answers).length > 0) {
+        questionIds = Object.keys(answers);
+      } else {
+        questionIds = questions.slice(0, raw.totalQuestions || 25).map((q) => q.id);
+      }
+      const uniqueQIds = Array.from(new Set(questionIds));
+
+      uniqueQIds.forEach((qId) => {
+        const chosen = answers[qId];
+        const q = questionMap.get(qId);
+        if (chosen !== undefined && chosen !== null && chosen !== '') {
+          attempted++;
+          if (q) {
+            const sel = String(chosen).trim().toUpperCase();
+            const corr = String(q.correctAnswer).trim().toUpperCase();
+            if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+              correct++;
+            } else {
+              wrong++;
+            }
+          } else {
+            wrong++;
+          }
+        }
+      });
+
+      const totalQ = uniqueQIds.length > 0 ? uniqueQIds.length : (raw.totalQuestions || 25);
+      const score = correct; // 1 mark per verified correct answer
+      const timeUsed = raw.timeUsed ?? (raw.submittedAt && raw.startedAt ? Math.max(1, Math.round((new Date(raw.submittedAt).getTime() - new Date(raw.startedAt).getTime()) / 1000)) : 120);
+
+      const record: SubmissionRecord = {
+        id: raw.id || `sub_${raw.attemptId || userKey}`,
+        attemptId: raw.attemptId || raw.id || `att_${userKey}`,
+        uid: raw.uid || userKey,
+        quizId: raw.quizId || 'sharadiya-circuit-2026',
+        quizTitle: raw.quizTitle || 'SHARADIYA CIRCUIT 2026',
+        participantName: raw.participantName || (raw.participantEmail ? raw.participantEmail.split('@')[0] : 'Participant'),
+        participantEmail: raw.participantEmail || '',
+        participantPhone: raw.participantPhone || 'N/A',
+        participantPhotoUrl: raw.participantPhotoUrl,
+        stream: raw.stream || '',
+        year: raw.year || '',
+        rollNo: raw.rollNo || '',
+        membershipId: raw.membershipId || '',
+        answers,
+        totalQuestions: totalQ,
+        attempted,
+        correct,
+        wrong,
+        score,
+        startedAt: raw.startedAt || new Date().toISOString(),
+        submittedAt: raw.submittedAt || raw.createdAt || new Date().toISOString(),
+        timeUsed,
+        syncedToSheets: Boolean(raw.syncedToSheets),
+        createdAt: raw.createdAt || raw.submittedAt || new Date().toISOString(),
+      };
+
+      const existing = userMap.get(userKey);
+      if (!existing) {
+        userMap.set(userKey, record);
+      } else {
+        // Prefer record with valid submitted answers or highest score / latest submission
+        const existingAttempted = Object.keys(existing.answers || {}).length;
+        const currentAttempted = Object.keys(answers).length;
+
+        if (currentAttempted > existingAttempted || (currentAttempted === existingAttempted && score > existing.score)) {
+          userMap.set(userKey, record);
+        }
+      }
+    };
+
+    // 1. Process explicit submissions collection
     submissions.forEach((s) => {
-      map.set(s.id || s.attemptId || s.uid, s);
+      verifyAndAggregate(s);
     });
 
+    // 2. Process attempt records (covers timed out, submitted, or in progress attempts)
     attempts.forEach((a) => {
       const isPastDeadline = a.deadline
         ? new Date(a.deadline).getTime() <= Date.now()
@@ -106,62 +194,32 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
       const isSubmittedOrEnded = a.status === 'SUBMITTED' || a.status === 'TIMED_OUT' || a.finalized || Boolean(a.submittedAt) || isPastDeadline || hasAnswers;
 
       if (isSubmittedOrEnded) {
-        const subId = `sub_${a.id}`;
-        if (!map.has(subId) && !map.has(a.id) && !map.has(a.uid)) {
-          const answers = (a as any).answers || {};
-          let computedCorrect = (a as any).correct ?? (a as any).score ?? 0;
-          let computedWrong = (a as any).wrong ?? 0;
-          let attemptedCount = 0;
-
-          if (Object.keys(answers).length > 0 && computedCorrect === 0) {
-            Object.entries(answers).forEach(([qId, chosen]) => {
-              attemptedCount++;
-              const q = questionMap.get(qId);
-              if (q && String(chosen).toUpperCase() === q.correctAnswer.toUpperCase()) {
-                computedCorrect++;
-              } else {
-                computedWrong++;
-              }
-            });
-          } else {
-            attemptedCount = Object.keys(answers).length || (a.selectedQuestionIds?.length || 25);
-          }
-
-          const computedScore = (a as any).score ?? computedCorrect;
-          const timeUsed = (a as any).timeUsed ?? (a.submittedAt && a.startedAt ? Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000) : a.durationSeconds || 120);
-
-          map.set(subId, {
-            id: subId,
-            attemptId: a.id,
-            uid: a.uid,
-            quizId: a.quizId,
-            quizTitle: 'SHARADIYA CIRCUIT 2026',
-            participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
-            participantEmail: a.participantEmail || '',
-            participantPhone: a.participantPhone || 'N/A',
-            participantPhotoUrl: a.participantPhotoUrl,
-            stream: a.stream || '',
-            year: a.year || '',
-            rollNo: a.rollNo || '',
-            membershipId: a.membershipId || '',
-            answers,
-            totalQuestions: a.selectedQuestionIds?.length || 25,
-            attempted: (a as any).attempted ?? attemptedCount,
-            correct: computedCorrect,
-            wrong: computedWrong,
-            score: computedScore,
-            startedAt: a.startedAt,
-            submittedAt: a.submittedAt || (isPastDeadline ? a.deadline || a.startedAt : a.startedAt),
-            timeUsed,
-            syncedToSheets: false,
-            createdAt: a.submittedAt || a.startedAt,
-          });
-        }
+        verifyAndAggregate({
+          id: `sub_${a.id}`,
+          attemptId: a.id,
+          uid: a.uid,
+          quizId: a.quizId,
+          participantName: a.participantName,
+          participantEmail: a.participantEmail,
+          participantPhone: a.participantPhone,
+          participantPhotoUrl: a.participantPhotoUrl,
+          stream: a.stream,
+          year: a.year,
+          rollNo: a.rollNo,
+          membershipId: a.membershipId,
+          answers: (a as any).answers || {},
+          selectedQuestionIds: a.selectedQuestionIds,
+          totalQuestions: a.selectedQuestionIds?.length || 25,
+          startedAt: a.startedAt,
+          submittedAt: a.submittedAt || (isPastDeadline ? a.deadline || a.startedAt : a.startedAt),
+          timeUsed: (a as any).timeUsed,
+          createdAt: a.createdAt,
+        });
       }
     });
 
-    return Array.from(map.values());
-  }, [submissions, attempts, questionMap]);
+    return Array.from(userMap.values());
+  }, [submissions, attempts, questions, questionMap]);
 
   const sortedSubmissions = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();

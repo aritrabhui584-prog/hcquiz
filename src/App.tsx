@@ -143,18 +143,19 @@ function MainApp() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Questions Listener (for Admin) & auto-seeder if empty
+  // 2. Live Questions Bank Listener (Real-time sync for Question Setter changes) & auto-seeder
   useEffect(() => {
-    if (!isAdmin) return;
     const unsubscribe = onSnapshot(collection(db, 'questions'), async (snapshot) => {
       if (snapshot.empty) {
-        const nowIso = new Date().toISOString();
-        for (const q of DEFAULT_QUESTIONS) {
-          await setDoc(doc(db, 'questions', q.id), {
-            ...q,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          });
+        if (isAdmin) {
+          const nowIso = new Date().toISOString();
+          for (const q of DEFAULT_QUESTIONS) {
+            await setDoc(doc(db, 'questions', q.id), {
+              ...q,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+          }
         }
       } else {
         const loaded = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as QuestionItem));
@@ -165,27 +166,49 @@ function MainApp() {
     return () => unsubscribe();
   }, [isAdmin]);
 
-  // 3. Check if participant already participated
+  // 3. Strict Check: One Google Account = One Quiz Exam
   useEffect(() => {
     if (!currentUser || !currentQuiz) {
       setHasAttempted(false);
       return;
     }
 
-    const q = query(
-      collection(db, 'attempts'),
-      where('quizId', '==', currentQuiz.id),
-      where('uid', '==', currentUser.uid)
-    );
+    let unsubAttempts = () => {};
+    let unsubSubmissions = () => {};
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const attempted = snapshot.docs.some(
-        (d) => d.data().finalized === true || d.data().status === 'SUBMITTED'
+    try {
+      const qAtt = query(
+        collection(db, 'attempts'),
+        where('uid', '==', currentUser.uid)
       );
-      setHasAttempted(attempted);
-    });
+      unsubAttempts = onSnapshot(qAtt, (snapshot) => {
+        const attempted = snapshot.docs.some((d) => {
+          const data = d.data();
+          const isPast = data.deadline ? new Date(data.deadline).getTime() < Date.now() : false;
+          return data.finalized === true || data.status === 'SUBMITTED' || data.status === 'TIMED_OUT' || isPast;
+        });
+        if (attempted) {
+          setHasAttempted(true);
+        }
+      });
+    } catch {}
 
-    return () => unsubscribe();
+    try {
+      const qSub = query(
+        collection(db, 'submissions'),
+        where('uid', '==', currentUser.uid)
+      );
+      unsubSubmissions = onSnapshot(qSub, (snapshot) => {
+        if (!snapshot.empty) {
+          setHasAttempted(true);
+        }
+      });
+    } catch {}
+
+    return () => {
+      unsubAttempts();
+      unsubSubmissions();
+    };
   }, [currentUser, currentQuiz]);
 
   // 4. Admin Live Real-Time Snapshot for attempts, submissions, and audit logs
@@ -276,14 +299,78 @@ function MainApp() {
         where('uid', '==', currentUser.uid)
       );
       const snapAtt = await getDocs(qAtt);
-      const alreadyAttempted = snapAtt.docs.some(
-        (d) => d.data().finalized === true || d.data().status === 'SUBMITTED' || d.data().status === 'TIMED_OUT'
-      );
-      if (alreadyAttempted) {
-        setHasAttempted(true);
-        alert('You have already attempted this competition. Only one attempt is permitted per Google Account.');
-        navigate('/submitted');
-        return;
+      
+      if (!snapAtt.empty) {
+        // Check if there is an active ongoing attempt that has not expired
+        const activeAttDoc = snapAtt.docs.find((d) => {
+          const data = d.data();
+          const isNotFinal = !data.finalized && data.status === 'IN_PROGRESS';
+          const isNotExpired = data.deadline ? new Date(data.deadline).getTime() > Date.now() : false;
+          return isNotFinal && isNotExpired;
+        });
+
+        if (activeAttDoc) {
+          // Resume ongoing session without creating a new attempt
+          const activeData = { id: activeAttDoc.id, ...activeAttDoc.data() } as AttemptRecord;
+          const pool = questions.length >= 25 ? questions : DEFAULT_QUESTIONS;
+          const qMap = new Map<string, QuestionItem>();
+          pool.forEach((q) => qMap.set(q.id, q));
+
+          const resumeQuestions: ParticipantQuestion[] = (activeData.selectedQuestionIds || [])
+            .map((qId) => qMap.get(qId))
+            .filter(Boolean)
+            .map((q) => ({
+              id: q!.id,
+              questionText: q!.questionText,
+              optionA: q!.optionA,
+              optionB: q!.optionB,
+              optionC: q!.optionC,
+              optionD: q!.optionD,
+              category: q!.category,
+              difficulty: q!.difficulty,
+              imageUrl: q!.imageUrl,
+              animationType: q!.animationType,
+              animationAssetUrl: q!.animationAssetUrl,
+            }));
+
+          setActiveSession({
+            attemptId: activeData.id,
+            startedAt: activeData.startedAt,
+            deadline: activeData.deadline,
+            durationSeconds: activeData.durationSeconds,
+            questions: resumeQuestions.length > 0 ? resumeQuestions : pool.slice(0, 25).map((q) => ({
+              id: q.id,
+              questionText: q.questionText,
+              optionA: q.optionA,
+              optionB: q.optionB,
+              optionC: q.optionC,
+              optionD: q.optionD,
+              category: q.category,
+              difficulty: q.difficulty,
+              imageUrl: q.imageUrl,
+              animationType: q.animationType,
+              animationAssetUrl: q.animationAssetUrl,
+            })),
+          });
+
+          soundEffects.playQuizStart();
+          navigate('/quiz');
+          return;
+        }
+
+        // If an attempt exists but is finalized, submitted, or expired, block second attempts
+        const alreadyDone = snapAtt.docs.some((d) => {
+          const data = d.data();
+          const isExpired = data.deadline ? new Date(data.deadline).getTime() <= Date.now() : true;
+          return data.finalized === true || data.status === 'SUBMITTED' || data.status === 'TIMED_OUT' || isExpired;
+        });
+
+        if (alreadyDone) {
+          setHasAttempted(true);
+          alert('You have already attempted this competition. Only one attempt is permitted per Google Account.');
+          navigate('/submitted');
+          return;
+        }
       }
     } catch (checkErr) {
       console.warn('Pre-quiz check notice:', checkErr);
@@ -352,7 +439,7 @@ function MainApp() {
         const durationSec = currentQuiz?.durationSeconds || 120;
         const deadline = new Date(now.getTime() + durationSec * 1000).toISOString();
 
-        // Pick 25 questions
+        // Pick 25 questions from live question repository
         const pool = questions.length >= 25 ? questions : DEFAULT_QUESTIONS;
         const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 25);
         const selectedIds = shuffled.map((q) => q.id);
@@ -415,7 +502,7 @@ function MainApp() {
     }
   };
 
-  // SUBMIT QUIZ HANDLER
+  // SUBMIT QUIZ HANDLER (Evaluates answers in real-time against Question Setter key)
   const handleSubmitQuiz = async (answers: Record<string, string>, isTimeout = false) => {
     if (!activeSession) return;
 
@@ -423,7 +510,7 @@ function MainApp() {
       const idToken = await getIdToken();
       const submittedAtIso = new Date().toISOString();
 
-      // Calculate scores and write SubmissionRecord directly to Firestore
+      // Real-time evaluation against the authoritative question bank
       if (currentUser) {
         const submissionId = `sub_${activeSession.attemptId}`;
         const questionsPool = questions.length > 0 ? questions : DEFAULT_QUESTIONS;
@@ -436,11 +523,17 @@ function MainApp() {
 
         activeSession.questions.forEach((q) => {
           const selected = answers[q.id];
-          if (selected) {
+          if (selected !== undefined && selected !== null && selected !== '') {
             attempted += 1;
             const fullQ = qMap.get(q.id);
-            if (fullQ && selected.toUpperCase() === fullQ.correctAnswer.toUpperCase()) {
-              correct += 1;
+            if (fullQ) {
+              const sel = String(selected).trim().toUpperCase();
+              const corr = String(fullQ.correctAnswer).trim().toUpperCase();
+              if (sel === corr || corr === `OPTION${sel}` || corr === `OPTION ${sel}` || corr === `${sel}.`) {
+                correct += 1;
+              } else {
+                wrong += 1;
+              }
             } else {
               wrong += 1;
             }
@@ -470,7 +563,7 @@ function MainApp() {
           rollNo: userProfile?.rollNo || '',
           membershipId: userProfile?.membershipId || '',
           answers,
-          totalQuestions: activeSession.questions.length,
+          totalQuestions: activeSession.questions.length || 25,
           attempted,
           correct,
           wrong,
@@ -490,6 +583,9 @@ function MainApp() {
             submittedAt: submittedAtIso,
             timeUsed: actualTimeUsed,
             score: correct,
+            correct,
+            wrong,
+            attempted,
             answers,
           });
         } catch (dbErr) {

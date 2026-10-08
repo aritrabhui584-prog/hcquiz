@@ -27,14 +27,63 @@ export const AdminQuizControl: React.FC<AdminQuizControlProps> = ({
     }
   };
 
-  // Build combined list of attempt records
-  const submissionAttemptIds = new Set(submissions.map((s) => s.attemptId));
-  const inProgress = attempts.filter((a) => a.status === 'IN_PROGRESS' && !submissionAttemptIds.has(a.id));
-  const completedCount = Math.max(
-    attempts.filter((a) => a.status === 'SUBMITTED' || a.finalized).length,
-    submissions.length
-  );
-  const totalLoggedCount = Math.max(attempts.length, submissions.length);
+  // Build deduplicated participant records (Strict One Google Account per participant)
+  const participantRows = React.useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      uid: string;
+      participantName: string;
+      contact: string;
+      startedAt: string;
+      submittedAt: string | null;
+      status: 'SUBMITTED' | 'IN_PROGRESS' | 'TIMED_OUT';
+    }>();
+
+    // 1. Check all attempts
+    attempts.forEach((a) => {
+      const userKey = (a.uid || a.participantEmail || a.id).toLowerCase();
+      const isPastDeadline = a.deadline
+        ? new Date(a.deadline).getTime() <= Date.now()
+        : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
+      const isSubmitted = a.status === 'SUBMITTED' || a.finalized || Boolean(a.submittedAt) || isPastDeadline;
+      const status: 'SUBMITTED' | 'IN_PROGRESS' | 'TIMED_OUT' = isSubmitted ? 'SUBMITTED' : (a.status === 'TIMED_OUT' ? 'TIMED_OUT' : 'IN_PROGRESS');
+
+      const existing = map.get(userKey);
+      if (!existing || (status === 'SUBMITTED' && existing.status !== 'SUBMITTED')) {
+        map.set(userKey, {
+          id: a.id,
+          uid: a.uid,
+          participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
+          contact: a.participantPhone || a.participantEmail || 'N/A',
+          startedAt: a.startedAt,
+          submittedAt: a.submittedAt || (isPastDeadline ? a.deadline || a.startedAt : null),
+          status,
+        });
+      }
+    });
+
+    // 2. Overlay submissions collection (which are finalized submitted records)
+    submissions.forEach((s) => {
+      const userKey = (s.uid || s.participantEmail || s.id).toLowerCase();
+      map.set(userKey, {
+        id: s.id,
+        uid: s.uid,
+        participantName: s.participantName || (s.participantEmail ? s.participantEmail.split('@')[0] : 'Participant'),
+        contact: s.participantPhone || s.participantEmail || 'N/A',
+        startedAt: s.startedAt || s.createdAt,
+        submittedAt: s.submittedAt || s.createdAt,
+        status: 'SUBMITTED',
+      });
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    );
+  }, [attempts, submissions]);
+
+  const inProgressCount = participantRows.filter((p) => p.status === 'IN_PROGRESS').length;
+  const completedCount = participantRows.filter((p) => p.status === 'SUBMITTED' || p.status === 'TIMED_OUT').length;
+  const totalLoggedCount = participantRows.length;
 
   return (
     <div className="space-y-6">
@@ -111,7 +160,7 @@ export const AdminQuizControl: React.FC<AdminQuizControlProps> = ({
                 <Clock className="w-4 h-4" />
                 <span>IN PROGRESS</span>
               </div>
-              <span className="font-mono font-bold text-lg text-white">{inProgress.length}</span>
+              <span className="font-mono font-bold text-lg text-white">{inProgressCount}</span>
             </div>
 
             <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
@@ -156,23 +205,23 @@ export const AdminQuizControl: React.FC<AdminQuizControlProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {attempts.slice(0, 15).map((a) => (
-                  <tr key={a.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 font-semibold text-white">{a.participantName}</td>
-                    <td className="py-2.5 text-slate-400">{a.participantPhone || a.participantEmail}</td>
-                    <td className="py-2.5 text-slate-400">{new Date(a.startedAt).toLocaleTimeString()}</td>
-                    <td className="py-2.5 text-slate-400">{a.submittedAt ? new Date(a.submittedAt).toLocaleTimeString() : 'In Progress'}</td>
+                {participantRows.slice(0, 15).map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-900/40">
+                    <td className="py-2.5 font-semibold text-white">{p.participantName}</td>
+                    <td className="py-2.5 text-slate-400">{p.contact}</td>
+                    <td className="py-2.5 text-slate-400">{new Date(p.startedAt).toLocaleTimeString()}</td>
+                    <td className="py-2.5 text-slate-400">{p.submittedAt ? new Date(p.submittedAt).toLocaleTimeString() : 'In Progress'}</td>
                     <td className="py-2.5">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          a.status === 'SUBMITTED'
+                          p.status === 'SUBMITTED'
                             ? 'bg-emerald-500/20 text-emerald-400'
-                            : a.status === 'IN_PROGRESS'
+                            : p.status === 'IN_PROGRESS'
                             ? 'bg-cyan-500/20 text-cyan-400 animate-pulse'
                             : 'bg-slate-800 text-slate-400'
                         }`}
                       >
-                        {a.status}
+                        {p.status}
                       </span>
                     </td>
                   </tr>

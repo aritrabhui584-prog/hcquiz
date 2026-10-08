@@ -36,46 +36,55 @@ export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
 }) => {
   const { getIdToken } = useAuth();
 
-  // Combine submissions and submitted attempts, sorted by score desc, time asc
+  // Combine submissions and submitted attempts, sorted by score desc, time asc (Strict 1 participant = 1 candidate)
   const rankedCandidates = React.useMemo(() => {
     const map = new Map<string, SubmissionRecord>();
+
     submissions.forEach((s) => {
-      map.set(s.uid || s.id, s);
+      const userKey = (s.uid || s.participantEmail || s.id || '').toLowerCase();
+      if (userKey) map.set(userKey, s);
     });
 
     attempts.forEach((a) => {
-      if (a.status === 'SUBMITTED' || a.finalized || a.submittedAt || (a as any).score !== undefined) {
-        if (!map.has(a.uid) && !map.has(a.id)) {
-          const elapsed = a.submittedAt && a.startedAt
-            ? Math.max(1, Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
-            : a.durationSeconds;
-          map.set(a.uid, {
-            id: `sub_${a.id}`,
-            attemptId: a.id,
-            uid: a.uid,
-            quizId: a.quizId,
-            quizTitle: 'SHARADIYA CIRCUIT 2026',
-            participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
-            participantEmail: a.participantEmail || '',
-            participantPhone: a.participantPhone || 'N/A',
-            participantPhotoUrl: a.participantPhotoUrl,
-            stream: a.stream || '',
-            year: a.year || '',
-            rollNo: a.rollNo || '',
-            membershipId: a.membershipId || '',
-            answers: (a as any).answers || {},
-            totalQuestions: a.selectedQuestionIds?.length || 25,
-            attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : a.selectedQuestionIds?.length || 25),
-            correct: (a as any).score ?? 0,
-            wrong: 0,
-            score: (a as any).score ?? 0,
-            startedAt: a.startedAt,
-            submittedAt: a.submittedAt || a.startedAt,
-            timeUsed: (a as any).timeUsed ?? elapsed,
-            syncedToSheets: false,
-            createdAt: a.submittedAt || a.startedAt,
-          });
-        }
+      const userKey = (a.uid || a.participantEmail || a.id || '').toLowerCase();
+      if (!userKey) return;
+
+      const isPastDeadline = a.deadline
+        ? new Date(a.deadline).getTime() <= Date.now()
+        : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
+      const hasAnswers = Boolean((a as any).answers && Object.keys((a as any).answers).length > 0);
+      const isSubmitted = a.status === 'SUBMITTED' || a.status === 'TIMED_OUT' || a.finalized || Boolean(a.submittedAt) || isPastDeadline || hasAnswers;
+
+      if (isSubmitted && !map.has(userKey)) {
+        const elapsed = a.submittedAt && a.startedAt
+          ? Math.max(1, Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
+          : a.durationSeconds || 120;
+        map.set(userKey, {
+          id: `sub_${a.id}`,
+          attemptId: a.id,
+          uid: a.uid,
+          quizId: a.quizId,
+          quizTitle: 'SHARADIYA CIRCUIT 2026',
+          participantName: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
+          participantEmail: a.participantEmail || '',
+          participantPhone: a.participantPhone || 'N/A',
+          participantPhotoUrl: a.participantPhotoUrl,
+          stream: a.stream || '',
+          year: a.year || '',
+          rollNo: a.rollNo || '',
+          membershipId: a.membershipId || '',
+          answers: (a as any).answers || {},
+          totalQuestions: a.selectedQuestionIds?.length || 25,
+          attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : a.selectedQuestionIds?.length || 25),
+          correct: (a as any).score ?? (a as any).correct ?? 0,
+          wrong: (a as any).wrong ?? 0,
+          score: (a as any).score ?? 0,
+          startedAt: a.startedAt,
+          submittedAt: a.submittedAt || a.startedAt,
+          timeUsed: (a as any).timeUsed ?? elapsed,
+          syncedToSheets: false,
+          createdAt: a.submittedAt || a.startedAt,
+        });
       }
     });
 
