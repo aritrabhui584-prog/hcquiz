@@ -490,6 +490,7 @@ function MainApp() {
             submittedAt: submittedAtIso,
             timeUsed: actualTimeUsed,
             score: correct,
+            answers,
           });
         } catch (dbErr) {
           console.warn('Firestore direct submission notice:', dbErr);
@@ -793,10 +794,29 @@ function MainApp() {
         await deleteDoc(doc(db, 'submissions', submission.id));
       } catch {}
 
-      setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
       if (submission.attemptId) {
-        setAttempts((prev) => prev.filter((a) => a.id !== submission.attemptId));
+        try {
+          await deleteDoc(doc(db, 'attempts', submission.attemptId));
+        } catch {}
       }
+
+      const rawAttId = submission.id.startsWith('sub_') ? submission.id.replace('sub_', '') : submission.id;
+      try {
+        await deleteDoc(doc(db, 'attempts', rawAttId));
+      } catch {}
+
+      if (submission.uid) {
+        try {
+          const qAtt = query(collection(db, 'attempts'), where('uid', '==', submission.uid));
+          const snap = await getDocs(qAtt);
+          for (const d of snap.docs) {
+            await deleteDoc(d.ref);
+          }
+        } catch {}
+      }
+
+      setSubmissions((prev) => prev.filter((s) => s.id !== submission.id && s.uid !== submission.uid));
+      setAttempts((prev) => prev.filter((a) => a.id !== submission.attemptId && a.id !== rawAttId && a.uid !== submission.uid));
     } catch (err) {
       console.error('Delete submission error:', err);
       throw err;

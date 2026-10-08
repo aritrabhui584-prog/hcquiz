@@ -56,6 +56,41 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     return map;
   }, [questions]);
 
+  // Helper to extract question items for a submission record
+  const getSubmissionQuestions = (sub: SubmissionRecord) => {
+    const attempt = attempts.find(
+      (a) => a.id === sub.attemptId || a.id === sub.id || a.uid === sub.uid
+    );
+    let questionIds: string[] = [];
+    if (attempt?.selectedQuestionIds && attempt.selectedQuestionIds.length > 0) {
+      questionIds = [...attempt.selectedQuestionIds];
+    } else if (sub.answers && Object.keys(sub.answers).length > 0) {
+      questionIds = Object.keys(sub.answers);
+    } else {
+      questionIds = questions.slice(0, sub.totalQuestions || 25).map((q) => q.id);
+    }
+
+    const uniqueIds = Array.from(new Set(questionIds));
+    if (uniqueIds.length === 0) {
+      questions.slice(0, 25).forEach((q) => uniqueIds.push(q.id));
+    }
+
+    return uniqueIds.map((qId, idx) => {
+      const q = questionMap.get(qId);
+      const chosen = sub.answers ? sub.answers[qId] : undefined;
+      const isAnswered = chosen !== undefined && chosen !== null && chosen !== '';
+      const isCorrect = isAnswered && q && String(chosen).toUpperCase() === q.correctAnswer.toUpperCase();
+      return {
+        index: idx + 1,
+        qId,
+        question: q,
+        chosen: isAnswered ? String(chosen).toUpperCase() : null,
+        isAnswered,
+        isCorrect,
+      };
+    });
+  };
+
   // Combine direct submissions collection with any submitted attempt records
   const allSubmissions = useMemo(() => {
     const map = new Map<string, SubmissionRecord>();
@@ -64,10 +99,37 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     });
 
     attempts.forEach((a) => {
-      if (a.status === 'SUBMITTED' || a.finalized || a.submittedAt) {
+      const isPastDeadline = a.deadline
+        ? new Date(a.deadline).getTime() <= Date.now()
+        : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
+      const hasAnswers = Boolean((a as any).answers && Object.keys((a as any).answers).length > 0);
+      const isSubmittedOrEnded = a.status === 'SUBMITTED' || a.status === 'TIMED_OUT' || a.finalized || Boolean(a.submittedAt) || isPastDeadline || hasAnswers;
+
+      if (isSubmittedOrEnded) {
         const subId = `sub_${a.id}`;
-        if (!map.has(subId) && !map.has(a.id)) {
-          const timeUsed = (a as any).timeUsed ?? (a.submittedAt && a.startedAt ? Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000) : a.durationSeconds);
+        if (!map.has(subId) && !map.has(a.id) && !map.has(a.uid)) {
+          const answers = (a as any).answers || {};
+          let computedCorrect = (a as any).correct ?? (a as any).score ?? 0;
+          let computedWrong = (a as any).wrong ?? 0;
+          let attemptedCount = 0;
+
+          if (Object.keys(answers).length > 0 && computedCorrect === 0) {
+            Object.entries(answers).forEach(([qId, chosen]) => {
+              attemptedCount++;
+              const q = questionMap.get(qId);
+              if (q && String(chosen).toUpperCase() === q.correctAnswer.toUpperCase()) {
+                computedCorrect++;
+              } else {
+                computedWrong++;
+              }
+            });
+          } else {
+            attemptedCount = Object.keys(answers).length || (a.selectedQuestionIds?.length || 25);
+          }
+
+          const computedScore = (a as any).score ?? computedCorrect;
+          const timeUsed = (a as any).timeUsed ?? (a.submittedAt && a.startedAt ? Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000) : a.durationSeconds || 120);
+
           map.set(subId, {
             id: subId,
             attemptId: a.id,
@@ -82,14 +144,14 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
             year: a.year || '',
             rollNo: a.rollNo || '',
             membershipId: a.membershipId || '',
-            answers: (a as any).answers || {},
+            answers,
             totalQuestions: a.selectedQuestionIds?.length || 25,
-            attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : a.selectedQuestionIds?.length || 25),
-            correct: (a as any).score ?? (a as any).correct ?? 0,
-            wrong: (a as any).wrong ?? 0,
-            score: (a as any).score ?? 0,
+            attempted: (a as any).attempted ?? attemptedCount,
+            correct: computedCorrect,
+            wrong: computedWrong,
+            score: computedScore,
             startedAt: a.startedAt,
-            submittedAt: a.submittedAt || a.startedAt,
+            submittedAt: a.submittedAt || (isPastDeadline ? a.deadline || a.startedAt : a.startedAt),
             timeUsed,
             syncedToSheets: false,
             createdAt: a.submittedAt || a.startedAt,
@@ -99,7 +161,7 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
     });
 
     return Array.from(map.values());
-  }, [submissions, attempts]);
+  }, [submissions, attempts, questionMap]);
 
   const sortedSubmissions = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -187,7 +249,7 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
             <td style="padding: 8px 10px; color: #047857; text-align: center;">${s.correct}</td>
             <td style="padding: 8px 10px; color: #b91c1c; text-align: center;">${s.wrong}</td>
             <td style="padding: 8px 10px; text-align: center; color: #0284c7; font-weight: bold;">${s.timeUsed}s</td>
-            <td style="padding: 8px 10px; text-align: center; font-weight: bold;">${Math.round((s.score / s.totalQuestions) * 100)}%</td>
+            <td style="padding: 8px 10px; text-align: center; font-weight: bold;">${Math.round((s.score / (s.totalQuestions || 25)) * 100)}%</td>
             <td style="padding: 8px 10px; text-align: right; color: #64748b; font-size: 10px;">${new Date(s.submittedAt).toLocaleDateString()} ${new Date(s.submittedAt).toLocaleTimeString()}</td>
           </tr>
         `
@@ -210,11 +272,11 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
             </div>
             <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
               <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Highest Score</div>
-              <div style="font-size: 18px; font-weight: 800; color: #047857;">${filterStats.maxScore} / 30</div>
+              <div style="font-size: 18px; font-weight: 800; color: #047857;">${filterStats.maxScore} / 25</div>
             </div>
             <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
               <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Average Score</div>
-              <div style="font-size: 18px; font-weight: 800; color: #0284c7;">${filterStats.avgScore} / 30</div>
+              <div style="font-size: 18px; font-weight: 800; color: #0284c7;">${filterStats.avgScore} / 25</div>
             </div>
             <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
               <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Fastest Completion</div>
@@ -245,35 +307,35 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
       // Individual or Multi-Candidate Dossier
       contentHtml = items
         .map((s, idx) => {
-          const answersEntries = Object.entries(s.answers || {});
+          const questionsList = getSubmissionQuestions(s);
 
-          const questionsBreakdownHtml = answersEntries
-            .map(([qId, selectedOption], qIdx) => {
-              const q = questionMap.get(qId);
-              const isCorrect =
-                q && selectedOption.toUpperCase() === q.correctAnswer.toUpperCase();
+          const questionsBreakdownHtml = questionsList
+            .map((item) => {
+              const q = item.question;
+              const isCorrect = item.isCorrect;
+              const isAnswered = item.isAnswered;
 
               return `
               <div style="padding: 10px; margin-bottom: 8px; border: 1px solid ${
-                isCorrect ? '#a7f3d0' : '#fecaca'
+                !isAnswered ? '#e2e8f0' : isCorrect ? '#a7f3d0' : '#fecaca'
               }; background: ${
-                isCorrect ? '#ecfdf5' : '#fff1f2'
+                !isAnswered ? '#f8fafc' : isCorrect ? '#ecfdf5' : '#fff1f2'
               }; border-radius: 6px; page-break-inside: avoid;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
                   <span style="font-weight: 700; font-size: 11px; color: #0f172a;">
-                    Q${qIdx + 1}: ${q?.questionText || qId}
+                    Q${item.index}: ${q?.questionText || item.qId}
                   </span>
                   <span style="font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; color: ${
-                    isCorrect ? '#047857' : '#b91c1c'
-                  }; background: ${isCorrect ? '#d1fae5' : '#fee2e2'};">
-                    ${isCorrect ? '+1.0 MARK (CORRECT)' : '0.0 MARKS (WRONG)'}
+                    !isAnswered ? '#64748b' : isCorrect ? '#047857' : '#b91c1c'
+                  }; background: ${!isAnswered ? '#f1f5f9' : isCorrect ? '#d1fae5' : '#fee2e2'};">
+                    ${!isAnswered ? '0.0 MARKS (SKIPPED)' : isCorrect ? '+1.0 MARK (CORRECT)' : '0.0 MARKS (WRONG)'}
                   </span>
                 </div>
 
                 <div style="display: flex; gap: 20px; font-size: 10px; color: #334155; margin-top: 4px;">
-                  <div>Participant Response: <strong style="color: #0f172a;">Option ${selectedOption}</strong></div>
+                  <div>Participant Response: <strong style="color: ${!isAnswered ? '#94a3b8' : '#0f172a'};">${isAnswered ? `Option ${item.chosen}` : 'Not Attempted'}</strong></div>
                   <div>Official Answer Key: <strong style="color: #047857;">Option ${
-                    q?.correctAnswer || 'N/A'
+                    q?.correctAnswer || 'A'
                   }</strong></div>
                   ${q?.category ? `<div>Category: <span style="color: #64748b;">${q.category}</span></div>` : ''}
                   ${q?.difficulty ? `<div>Difficulty: <span style="color: #64748b;">${q.difficulty}</span></div>` : ''}
@@ -723,47 +785,109 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
 
             {/* Detailed Question By Question Analysis */}
             <div className="space-y-3">
-              <h4 className="font-mono text-xs font-bold text-slate-400 uppercase">
-                QUESTION-BY-QUESTION BREAKDOWN:
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-mono text-xs font-bold text-slate-400 uppercase">
+                  QUESTION-BY-QUESTION BREAKDOWN ({getSubmissionQuestions(selectedSubmission).length} QUESTIONS):
+                </h4>
+                <span className="font-mono text-[10px] text-slate-500">
+                  {selectedSubmission.attempted} Attempted • {selectedSubmission.correct} Correct • {selectedSubmission.wrong} Wrong
+                </span>
+              </div>
 
-              {Object.entries(selectedSubmission.answers).map(([qId, selectedOption], idx) => {
-                const question = questionMap.get(qId);
-                const isCorrect =
-                  question && selectedOption.toUpperCase() === question.correctAnswer.toUpperCase();
+              {getSubmissionQuestions(selectedSubmission).map((item) => {
+                const q = item.question;
+                const isCorrect = item.isCorrect;
+                const isAnswered = item.isAnswered;
 
                 return (
                   <div
-                    key={qId}
-                    className={`p-3.5 rounded-xl border text-xs font-mono space-y-1.5 ${
-                      isCorrect
+                    key={item.qId}
+                    className={`p-3.5 rounded-xl border text-xs font-mono space-y-2 ${
+                      !isAnswered
+                        ? 'bg-slate-900/40 border-slate-800 text-slate-300'
+                        : isCorrect
                         ? 'bg-emerald-950/20 border-emerald-500/30 text-slate-200'
                         : 'bg-rose-950/20 border-rose-500/30 text-slate-200'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">
-                        Q{String(idx + 1).padStart(2, '0')}: {question?.questionText || qId}
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="font-bold text-white leading-snug">
+                        Q{String(item.index).padStart(2, '0')}: {q?.questionText || item.qId}
                       </span>
-                      {isCorrect ? (
-                        <span className="flex items-center gap-1 text-emerald-400 font-bold">
-                          <CheckCircle className="w-3.5 h-3.5" /> +1 CORRECT
+                      {!isAnswered ? (
+                        <span className="flex items-center gap-1 text-slate-400 font-bold shrink-0 bg-slate-800/80 px-2 py-0.5 rounded text-[11px]">
+                          0.0 SKIPPED
+                        </span>
+                      ) : isCorrect ? (
+                        <span className="flex items-center gap-1 text-emerald-400 font-bold shrink-0 bg-emerald-950/60 px-2 py-0.5 rounded text-[11px]">
+                          <CheckCircle className="w-3.5 h-3.5" /> +1.0 CORRECT
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-rose-400 font-bold">
-                          <XCircle className="w-3.5 h-3.5" /> 0 WRONG
+                        <span className="flex items-center gap-1 text-rose-400 font-bold shrink-0 bg-rose-950/60 px-2 py-0.5 rounded text-[11px]">
+                          <XCircle className="w-3.5 h-3.5" /> 0.0 WRONG
                         </span>
                       )}
                     </div>
 
-                    <div className="flex gap-4 text-[11px] text-slate-400 pt-1">
-                      <span>Participant Selected: <strong className="text-white">Option {selectedOption}</strong></span>
-                      <span>Correct Key: <strong className="text-emerald-400">Option {question?.correctAnswer || 'N/A'}</strong></span>
+                    {/* Options list if available */}
+                    {q && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                        <div className={`p-2 rounded-lg border ${
+                          q.correctAnswer.toUpperCase() === 'A'
+                            ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200 font-semibold'
+                            : item.chosen === 'A'
+                            ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+                            : 'border-slate-800/80 bg-slate-950/50 text-slate-400'
+                        }`}>
+                          <strong className="text-white">A.</strong> {q.optionA}
+                          {item.chosen === 'A' && <span className="ml-1 text-[9px] text-amber-300 font-bold">(Participant Chosen)</span>}
+                        </div>
+
+                        <div className={`p-2 rounded-lg border ${
+                          q.correctAnswer.toUpperCase() === 'B'
+                            ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200 font-semibold'
+                            : item.chosen === 'B'
+                            ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+                            : 'border-slate-800/80 bg-slate-950/50 text-slate-400'
+                        }`}>
+                          <strong className="text-white">B.</strong> {q.optionB}
+                          {item.chosen === 'B' && <span className="ml-1 text-[9px] text-amber-300 font-bold">(Participant Chosen)</span>}
+                        </div>
+
+                        <div className={`p-2 rounded-lg border ${
+                          q.correctAnswer.toUpperCase() === 'C'
+                            ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200 font-semibold'
+                            : item.chosen === 'C'
+                            ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+                            : 'border-slate-800/80 bg-slate-950/50 text-slate-400'
+                        }`}>
+                          <strong className="text-white">C.</strong> {q.optionC}
+                          {item.chosen === 'C' && <span className="ml-1 text-[9px] text-amber-300 font-bold">(Participant Chosen)</span>}
+                        </div>
+
+                        <div className={`p-2 rounded-lg border ${
+                          q.correctAnswer.toUpperCase() === 'D'
+                            ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200 font-semibold'
+                            : item.chosen === 'D'
+                            ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+                            : 'border-slate-800/80 bg-slate-950/50 text-slate-400'
+                        }`}>
+                          <strong className="text-white">D.</strong> {q.optionD}
+                          {item.chosen === 'D' && <span className="ml-1 text-[9px] text-amber-300 font-bold">(Participant Chosen)</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-4 text-[11px] text-slate-400 pt-1">
+                      <span>Participant Selected: <strong className={isAnswered ? 'text-white' : 'text-slate-500 italic'}>{isAnswered ? `Option ${item.chosen}` : 'Not Attempted / Skipped'}</strong></span>
+                      <span>Correct Key: <strong className="text-emerald-400">Option {q?.correctAnswer || 'A'}</strong></span>
+                      {q?.category && <span>Category: <span className="text-slate-300">{q.category}</span></span>}
+                      {q?.difficulty && <span>Difficulty: <span className="text-slate-300">{q.difficulty}</span></span>}
                     </div>
 
-                    {question?.explanation && (
-                      <p className="text-[10px] text-slate-500 italic pt-1 border-t border-slate-800">
-                        Explanation: {question.explanation}
+                    {q?.explanation && (
+                      <p className="text-[10px] text-slate-400 italic pt-1.5 border-t border-slate-800/80">
+                        <strong className="text-emerald-400 not-italic">Solution Note:</strong> {q.explanation}
                       </p>
                     )}
                   </div>
@@ -962,30 +1086,30 @@ export const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({
 
                         {/* Sample Question Cards Preview */}
                         <div className="space-y-1.5 font-mono text-[10px]">
-                          {Object.entries(s.answers).slice(0, 5).map(([qId, selectedOption], qIdx) => {
-                            const question = questionMap.get(qId);
-                            const isCorrect =
-                              question && selectedOption.toUpperCase() === question.correctAnswer.toUpperCase();
+                          {getSubmissionQuestions(s).slice(0, 5).map((item) => {
+                            const question = item.question;
+                            const isCorrect = item.isCorrect;
+                            const isAnswered = item.isAnswered;
 
                             return (
                               <div
-                                key={qId}
+                                key={item.qId}
                                 className={`p-2 rounded border ${
-                                  isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
+                                  !isAnswered ? 'bg-slate-50 border-slate-200' : isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
                                 } flex items-center justify-between`}
                               >
                                 <div>
-                                  <span className="font-bold">
-                                    Q{qIdx + 1}: {question?.questionText?.slice(0, 70) || qId}...
+                                  <span className="font-bold text-slate-900">
+                                    Q{item.index}: {question?.questionText?.slice(0, 70) || item.qId}...
                                   </span>
                                   <div className="text-[9px] text-slate-600 mt-0.5">
-                                    Selected: <strong>Option {selectedOption}</strong> | Correct: <strong>Option {question?.correctAnswer || 'A'}</strong>
+                                    Selected: <strong className={isAnswered ? 'text-slate-900' : 'text-slate-400'}>{isAnswered ? `Option ${item.chosen}` : 'Not Attempted'}</strong> | Correct: <strong>Option {question?.correctAnswer || 'A'}</strong>
                                   </div>
                                 </div>
                                 <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
-                                  isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                  !isAnswered ? 'bg-slate-200 text-slate-700' : isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                                 }`}>
-                                  {isCorrect ? '+1.0' : '0.0'}
+                                  {!isAnswered ? '0.0' : isCorrect ? '+1.0' : '0.0'}
                                 </span>
                               </div>
                             );
