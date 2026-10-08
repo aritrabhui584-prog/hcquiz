@@ -41,19 +41,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Questions bank with answer keys - admin only (participants get sanitized questions via server API)
+    // Questions bank - authenticated users can read, only admins can modify
     match /questions/{questionId} {
-      allow read, write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
-    // Participant Attempts
+    // Participant Attempts - only owner or admin can read/create/update, only admin can delete
     match /attempts/{attemptId} {
-      allow read, write: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
-    // Submissions - participants can create and read, admins have full access
+    // Submissions & Answer Scripts - strictly private to owner & admin, cannot be altered after write
     match /submissions/{submissionId} {
-      allow read, write: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     // Published Winners & Leaderboard - public read, admin write

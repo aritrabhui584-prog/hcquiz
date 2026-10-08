@@ -246,12 +246,29 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // 2. Check if user already attempted this quiz (One attempt rule)
+    // 2. Check if user already attempted this quiz (Strict One Google Account = One Exam Rule)
+    let hasExistingSubmission = false;
+    try {
+      const subQuery = query(
+        collection(db, 'submissions'),
+        where('uid', '==', user.uid)
+      );
+      const subSnap = await getDocs(subQuery);
+      hasExistingSubmission = !subSnap.empty;
+    } catch {}
+
+    if (!hasExistingSubmission) {
+      inMemorySubmissions.forEach((sub) => {
+        if (sub.uid === user.uid || (user.email && sub.participantEmail?.toLowerCase() === user.email.toLowerCase())) {
+          hasExistingSubmission = true;
+        }
+      });
+    }
+
     let existingAttemptsList: AttemptRecord[] = [];
     try {
       const attemptsQuery = query(
         collection(db, 'attempts'),
-        where('quizId', '==', activeQuiz.id),
         where('uid', '==', user.uid)
       );
       const existingAttempts = await getDocs(attemptsQuery);
@@ -259,12 +276,12 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
     } catch (e) {
       console.warn('Firestore attempts query notice (using in-memory attempt check):', e);
       existingAttemptsList = Array.from(inMemoryAttempts.values()).filter(
-        a => a.quizId === activeQuiz.id && a.uid === user.uid
+        a => a.uid === user.uid
       );
     }
 
-    const alreadyFinished = existingAttemptsList.some(
-      (d) => d.finalized === true || d.status === 'SUBMITTED'
+    const alreadyFinished = hasExistingSubmission || existingAttemptsList.some(
+      (d) => d.finalized === true || d.status === 'SUBMITTED' || d.status === 'TIMED_OUT'
     );
 
     if (alreadyFinished) {
@@ -276,12 +293,12 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
           actorUid: user.uid,
           actorEmail: user.email,
           actorName: user.displayName,
-          details: 'Attempt blocked: Participant already finalized an attempt for this quiz edition.',
+          details: 'Attempt blocked: Participant already submitted an exam for this Google account.',
           metadata: { quizId: activeQuiz.id }
         });
       } catch {}
       res.status(409).json({
-        error: 'YOU HAVE ALREADY PARTICIPATED IN THIS QUIZ. Only one attempt is permitted.',
+        error: 'YOU HAVE ALREADY PARTICIPATED IN THIS QUIZ. Only one attempt is permitted per Google Account.',
         alreadyAttempted: true,
       });
       return;

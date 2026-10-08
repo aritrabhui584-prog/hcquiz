@@ -277,6 +277,38 @@ function MainApp() {
       return;
     }
 
+    // Rule 1: One Google Account and only one quiz exam
+    try {
+      const qSub = query(
+        collection(db, 'submissions'),
+        where('uid', '==', currentUser.uid)
+      );
+      const snapSub = await getDocs(qSub);
+      if (!snapSub.empty) {
+        setHasAttempted(true);
+        alert('You have already submitted your examination. Only one attempt is permitted per Google Account.');
+        navigate('/submitted');
+        return;
+      }
+
+      const qAtt = query(
+        collection(db, 'attempts'),
+        where('uid', '==', currentUser.uid)
+      );
+      const snapAtt = await getDocs(qAtt);
+      const alreadyAttempted = snapAtt.docs.some(
+        (d) => d.data().finalized === true || d.data().status === 'SUBMITTED' || d.data().status === 'TIMED_OUT'
+      );
+      if (alreadyAttempted) {
+        setHasAttempted(true);
+        alert('You have already attempted this competition. Only one attempt is permitted per Google Account.');
+        navigate('/submitted');
+        return;
+      }
+    } catch (checkErr) {
+      console.warn('Pre-quiz check notice:', checkErr);
+    }
+
     try {
       const idToken = await getIdToken();
       let startedSuccessfully = false;
