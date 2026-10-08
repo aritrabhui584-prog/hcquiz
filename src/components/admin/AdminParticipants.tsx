@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
-import { Search, Phone, Mail } from 'lucide-react';
+import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { SubmissionRecord, AttemptRecord } from '../../types/quiz';
 
 interface AdminParticipantsProps {
   attempts: AttemptRecord[];
   submissions: SubmissionRecord[];
+  onDeleteParticipant?: (participant: { uid: string; email: string; name: string }) => Promise<void>;
 }
 
 export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   attempts,
   submissions,
+  onDeleteParticipant,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingParticipant, setDeletingParticipant] = useState<{ uid: string; email: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Merge unique participants from attempts and submissions
   const participantMap = new Map<string, {
@@ -76,6 +80,20 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       p.phone.includes(searchTerm)
   );
 
+  const confirmDelete = async () => {
+    if (!deletingParticipant || !onDeleteParticipant) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteParticipant(deletingParticipant);
+      setDeletingParticipant(null);
+    } catch (err) {
+      console.error('Failed to delete participant:', err);
+      alert('Failed to delete participant. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-emerald-500/20">
@@ -118,6 +136,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                   <th className="p-3.5">Status</th>
                   <th className="p-3.5">Time Used</th>
                   <th className="p-3.5">Score</th>
+                  <th className="p-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -172,6 +191,18 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                         <span className="text-slate-600">—</span>
                       )}
                     </td>
+                    <td className="p-3.5 text-right">
+                      {onDeleteParticipant && (
+                        <button
+                          onClick={() => setDeletingParticipant({ uid: p.uid, email: p.email, name: p.name })}
+                          className="px-2.5 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-xs font-mono text-rose-400 hover:text-rose-200 transition inline-flex items-center gap-1.5 cursor-pointer"
+                          title="Delete participant record, answer scripts, and attempts"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>DELETE</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -179,6 +210,62 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deletingParticipant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-[#090f14] border border-rose-500/40 p-6 text-slate-100 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/30">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">Delete Participant?</h3>
+                <p className="font-mono text-xs text-slate-400">Irreversible administrative action</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 font-mono text-xs space-y-1.5 text-slate-300">
+              <div>Participant: <strong className="text-white">{deletingParticipant.name}</strong></div>
+              <div>Email: <span className="text-emerald-400">{deletingParticipant.email || 'N/A'}</span></div>
+              <div className="text-[11px] text-rose-400/90 pt-1">
+                ⚠️ This will permanently delete the participant&apos;s answer scripts, quiz attempts, and scores.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingParticipant(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                CANCEL
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(225,29,72,0.4)]"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>DELETING...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>CONFIRM DELETE</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

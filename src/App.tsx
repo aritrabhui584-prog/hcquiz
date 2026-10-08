@@ -484,6 +484,69 @@ function MainApp() {
     }
   };
 
+  const handleDeleteParticipant = async (participant: { uid: string; email: string; name: string }) => {
+    try {
+      const idToken = await getIdToken();
+      const res = await fetch('/api/admin/delete-participant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(participant),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete participant.');
+      }
+
+      setAttempts((prev) =>
+        prev.filter((a) => a.uid !== participant.uid && a.participantEmail !== participant.email)
+      );
+      setSubmissions((prev) =>
+        prev.filter((s) => s.uid !== participant.uid && s.participantEmail !== participant.email)
+      );
+
+      syncAdminData();
+    } catch (err) {
+      console.error('Delete participant error:', err);
+      throw err;
+    }
+  };
+
+  const handleDeleteSubmission = async (submission: SubmissionRecord) => {
+    try {
+      const idToken = await getIdToken();
+      const res = await fetch('/api/admin/delete-submission', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          submissionId: submission.id,
+          attemptId: submission.attemptId,
+          participantName: submission.participantName,
+          participantEmail: submission.participantEmail,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete submission.');
+      }
+
+      setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
+      if (submission.attemptId) {
+        setAttempts((prev) => prev.filter((a) => a.id !== submission.attemptId));
+      }
+
+      syncAdminData();
+    } catch (err) {
+      console.error('Delete submission error:', err);
+      throw err;
+    }
+  };
+
   const handleSeedQuestions = async () => {
     const idToken = await getIdToken();
     const res = await fetch('/api/admin/seed-questions', {
@@ -677,11 +740,19 @@ function MainApp() {
           {adminTab === 'animations' && <AdminAnimations />}
 
           {adminTab === 'participants' && (
-            <AdminParticipants attempts={attempts} submissions={submissions} />
+            <AdminParticipants
+              attempts={attempts}
+              submissions={submissions}
+              onDeleteParticipant={handleDeleteParticipant}
+            />
           )}
 
           {adminTab === 'submissions' && (
-            <AdminSubmissions submissions={submissions} questions={questions} />
+            <AdminSubmissions
+              submissions={submissions}
+              questions={questions}
+              onDeleteSubmission={handleDeleteSubmission}
+            />
           )}
 
           {adminTab === 'winners' && (

@@ -9,6 +9,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   limit
@@ -909,6 +910,158 @@ apiRouter.post('/admin/sync-sheet', async (req: Request, res: Response): Promise
   } catch (err) {
     console.error('Manual sheet sync error:', err);
     res.status(500).json({ error: 'Failed to sync with Google Sheets.' });
+  }
+});
+
+/**
+ * POST /api/admin/delete-participant
+ * Deletes all attempt records, submission records, and user document for a participant
+ */
+apiRouter.post('/admin/delete-participant', async (req: Request, res: Response): Promise<void> => {
+  const { isAdmin, user } = await verifyAdminUser(req);
+  if (!isAdmin || !user) {
+    res.status(403).json({ error: 'Forbidden: Admin access required.' });
+    return;
+  }
+
+  try {
+    const { uid, email, name } = req.body || {};
+    if (!uid && !email) {
+      res.status(400).json({ error: 'Participant UID or Email is required.' });
+      return;
+    }
+
+    let deletedAttempts = 0;
+    let deletedSubmissions = 0;
+
+    // 1. Delete attempts from Firestore and in-memory cache
+    try {
+      const q = uid
+        ? query(collection(db, 'attempts'), where('uid', '==', uid))
+        : query(collection(db, 'attempts'), where('participantEmail', '==', email));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, 'attempts', d.id));
+        inMemoryAttempts.delete(d.id);
+        deletedAttempts++;
+      }
+    } catch (e) {
+      console.warn('Firestore attempt deletion notice:', e);
+    }
+
+    // Also purge any in-memory attempts matching UID or Email
+    inMemoryAttempts.forEach((att, key) => {
+      if ((uid && att.uid === uid) || (email && att.participantEmail === email)) {
+        inMemoryAttempts.delete(key);
+      }
+    });
+
+    // 2. Delete submissions from Firestore and in-memory cache
+    try {
+      const q = uid
+        ? query(collection(db, 'submissions'), where('uid', '==', uid))
+        : query(collection(db, 'submissions'), where('participantEmail', '==', email));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, 'submissions', d.id));
+        inMemorySubmissions.delete(d.id);
+        deletedSubmissions++;
+      }
+    } catch (e) {
+      console.warn('Firestore submission deletion notice:', e);
+    }
+
+    // Also purge any in-memory submissions matching UID or Email
+    inMemorySubmissions.forEach((sub, key) => {
+      if ((uid && sub.uid === uid) || (email && sub.participantEmail === email)) {
+        inMemorySubmissions.delete(key);
+      }
+    });
+
+    // 3. Delete user document from Firestore if exists
+    if (uid) {
+      try {
+        await deleteDoc(doc(db, 'users', uid));
+      } catch {}
+    }
+
+    // 4. Log Audit Event
+    await logAuditEvent({
+      eventType: 'PARTICIPANT_DELETED',
+      category: 'ADMIN',
+      severity: 'WARN',
+      actorUid: user.uid,
+      actorEmail: user.email,
+      actorName: user.displayName || user.email.split('@')[0],
+      details: `Deleted participant "${name || email || uid}" (Purged ${deletedAttempts} attempts, ${deletedSubmissions} submissions).`,
+      metadata: { targetUid: uid, targetEmail: email, deletedAttempts, deletedSubmissions },
+    });
+
+    res.json({
+      success: true,
+      message: `Participant record deleted successfully.`,
+      deletedAttempts,
+      deletedSubmissions,
+    });
+  } catch (err: any) {
+    console.error('Delete participant error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete participant.' });
+  }
+});
+
+/**
+ * POST /api/admin/delete-submission
+ * Deletes a single answer script / submission record and optionally its attempt
+ */
+apiRouter.post('/admin/delete-submission', async (req: Request, res: Response): Promise<void> => {
+  const { isAdmin, user } = await verifyAdminUser(req);
+  if (!isAdmin || !user) {
+    res.status(403).json({ error: 'Forbidden: Admin access required.' });
+    return;
+  }
+
+  try {
+    const { submissionId, attemptId, participantName, participantEmail } = req.body || {};
+    if (!submissionId) {
+      res.status(400).json({ error: 'Submission ID is required.' });
+      return;
+    }
+
+    // 1. Delete submission from Firestore
+    try {
+      await deleteDoc(doc(db, 'submissions', submissionId));
+    } catch (e) {
+      console.warn('Firestore deleteDoc submission notice:', e);
+    }
+    inMemorySubmissions.delete(submissionId);
+
+    // 2. Optionally delete / reset attempt if attemptId provided
+    if (attemptId) {
+      try {
+        await deleteDoc(doc(db, 'attempts', attemptId));
+      } catch {}
+      inMemoryAttempts.delete(attemptId);
+    }
+
+    // 3. Log Audit Event
+    await logAuditEvent({
+      eventType: 'SUBMISSION_DELETED',
+      category: 'ADMIN',
+      severity: 'WARN',
+      actorUid: user.uid,
+      actorEmail: user.email,
+      actorName: user.displayName || user.email.split('@')[0],
+      details: `Deleted answer script ID "${submissionId}" for candidate "${participantName || participantEmail || 'Unknown'}".`,
+      metadata: { submissionId, attemptId, participantEmail },
+    });
+
+    res.json({
+      success: true,
+      message: `Answer script "${submissionId}" deleted successfully.`,
+    });
+  } catch (err: any) {
+    console.error('Delete submission error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete answer script.' });
   }
 });
 
