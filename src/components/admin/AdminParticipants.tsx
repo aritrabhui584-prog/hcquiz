@@ -196,7 +196,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                     </td>
                     <td className="p-3.5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {onResetAttempt && p.status === 'IN_PROGRESS' && (
+                        {onResetAttempt && (
                           <button
                             onClick={async () => {
                               if (confirm(`Reset session for ${p.name} so they can re-take the quiz?`)) {
@@ -210,7 +210,7 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                             }}
                             disabled={resettingUid === p.uid}
                             className="px-2.5 py-1.5 rounded-lg bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/30 text-xs font-mono text-cyan-400 hover:text-cyan-200 transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                            title="Reset in-progress session to allow re-taking the quiz"
+                            title="Reset attempt session to allow re-taking the quiz"
                           >
                             <RotateCcw className={`w-3.5 h-3.5 ${resettingUid === p.uid ? 'animate-spin' : ''}`} />
                             <span>RESET</span>

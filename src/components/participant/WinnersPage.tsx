@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, User } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { PublishedWinner } from '../../types/quiz';
 import { HeaderLogo } from '../common/HeaderLogo';
@@ -17,9 +17,16 @@ export const WinnersPage: React.FC<WinnersPageProps> = ({ onBack }) => {
   useEffect(() => {
     const fetchWinners = async () => {
       try {
-        const snap = await getDoc(doc(db, 'winners', 'win_quiz_sharadiya_2026'));
-        if (snap.exists()) {
-          setWinnerData(snap.data() as PublishedWinner);
+        const snap = await getDocs(collection(db, 'winners'));
+        if (!snap.empty) {
+          const published = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as PublishedWinner))
+            .find((w) => w.published !== false);
+          if (published) {
+            setWinnerData(published);
+          } else {
+            setWinnerData({ id: snap.docs[0].id, ...snap.docs[0].data() } as PublishedWinner);
+          }
         }
       } catch (err) {
         console.warn('Could not load winners:', err);

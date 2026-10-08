@@ -79,12 +79,12 @@ export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
   const getCandidateByUid = (uid: string) => rankedCandidates.find((c) => c.uid === uid);
 
   const handlePublish = async () => {
-    const c1 = getCandidateByUid(firstPlaceUid);
-    const c2 = getCandidateByUid(secondPlaceUid);
-    const c3 = getCandidateByUid(thirdPlaceUid);
+    const c1 = getCandidateByUid(firstPlaceUid) || rankedCandidates[0];
+    const c2 = getCandidateByUid(secondPlaceUid) || rankedCandidates[1] || c1;
+    const c3 = getCandidateByUid(thirdPlaceUid) || rankedCandidates[2] || c2 || c1;
 
-    if (!c1 || !c2 || !c3) {
-      alert('Please select valid contestants for all three podium positions.');
+    if (!c1) {
+      alert('No participant submissions available to publish winners.');
       return;
     }
 
@@ -109,7 +109,7 @@ export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
           timeUsed: c1.timeUsed,
           badgeTitle: firstTitle,
         },
-        secondPlace: {
+        secondPlace: c2 ? {
           uid: c2.uid,
           name: c2.participantName,
           email: c2.participantEmail,
@@ -119,8 +119,8 @@ export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
           score: c2.score,
           timeUsed: c2.timeUsed,
           badgeTitle: secondTitle,
-        },
-        thirdPlace: {
+        } : undefined,
+        thirdPlace: c3 && c3.uid !== c2?.uid ? {
           uid: c3.uid,
           name: c3.participantName,
           email: c3.participantEmail,
@@ -130,7 +130,7 @@ export const AdminWinnerManagement: React.FC<AdminWinnerManagementProps> = ({
           score: c3.score,
           timeUsed: c3.timeUsed,
           badgeTitle: thirdTitle,
-        },
+        } : undefined,
       });
 
       setShowConfirmModal(false);
