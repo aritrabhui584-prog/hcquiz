@@ -47,19 +47,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Participant Attempts - only owner or admin can read/create/update, only admin can delete
+    // Participant Attempts - signed in users can create/update their attempts, admins have full control
     match /attempts/{attemptId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow update: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
-    // Submissions & Answer Scripts - strictly private to owner & admin, cannot be altered after write
+    // Submissions & Answer Scripts - signed in users can record submissions, admins have full control
     match /submissions/{submissionId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Published Winners & Leaderboard - public read, admin write

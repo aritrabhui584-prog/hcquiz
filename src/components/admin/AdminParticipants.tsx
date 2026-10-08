@@ -38,6 +38,10 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   }>();
 
   attempts.forEach((a) => {
+    const elapsed = a.submittedAt && a.startedAt
+      ? Math.max(1, Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
+      : null;
+
     participantMap.set(a.uid, {
       uid: a.uid,
       name: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
@@ -47,11 +51,11 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       quizId: a.quizId,
       startedAt: a.startedAt,
       submittedAt: a.submittedAt || null,
-      status: a.status,
-      timeUsed: a.submittedAt ? Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000) : null,
-      score: null,
+      status: a.status || (a.finalized ? 'SUBMITTED' : 'IN_PROGRESS'),
+      timeUsed: (a as any).timeUsed ?? elapsed,
+      score: (a as any).score ?? null,
       totalQuestions: a.selectedQuestionIds?.length || 25,
-      attempted: null,
+      attempted: (a as any).attempted ?? null,
     });
   });
 

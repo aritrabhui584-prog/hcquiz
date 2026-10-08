@@ -71,6 +71,7 @@ function MainApp() {
   // Participant Quiz Session State
   const [activeSession, setActiveSession] = useState<{
     attemptId: string;
+    startedAt?: string;
     deadline: string;
     durationSeconds: number;
     questions: ParticipantQuestion[];
@@ -187,37 +188,9 @@ function MainApp() {
     return () => unsubscribe();
   }, [currentUser, currentQuiz]);
 
-  const syncAdminData = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      const idToken = await getIdToken();
-      if (!idToken) return;
-      const res = await fetch('/api/admin/data', {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.attempts)) {
-          setAttempts(data.attempts);
-        }
-        if (Array.isArray(data.submissions)) {
-          setSubmissions(data.submissions);
-        }
-        if (Array.isArray(data.auditLogs) && data.auditLogs.length > 0) {
-          setAuditLogs(data.auditLogs);
-        }
-      }
-    } catch (e) {
-      console.warn('Admin authoritative data sync notice:', e);
-    }
-  }, [isAdmin, getIdToken]);
-
-  // 4. Admin Live Snapshot for attempts, submissions, and logs
+  // 4. Admin Live Real-Time Snapshot for attempts, submissions, and audit logs
   useEffect(() => {
     if (!isAdmin) return;
-
-    syncAdminData();
-    const interval = setInterval(syncAdminData, 3000);
 
     let unsubAttempts = () => {};
     let unsubSubmissions = () => {};
@@ -225,15 +198,21 @@ function MainApp() {
 
     try {
       unsubAttempts = onSnapshot(collection(db, 'attempts'), (snap) => {
-        setAttempts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttemptRecord)));
+        const loadedAttempts = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttemptRecord));
+        setAttempts(loadedAttempts);
       });
-    } catch {}
+    } catch (err) {
+      console.warn('Attempts realtime listener notice:', err);
+    }
 
     try {
       unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snap) => {
-        setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SubmissionRecord)));
+        const loadedSubmissions = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SubmissionRecord));
+        setSubmissions(loadedSubmissions);
       });
-    } catch {}
+    } catch (err) {
+      console.warn('Submissions realtime listener notice:', err);
+    }
 
     try {
       unsubAudit = onSnapshot(collection(db, 'audit_logs'), (snap) => {
@@ -242,15 +221,16 @@ function MainApp() {
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setAuditLogs(logs);
       });
-    } catch {}
+    } catch (err) {
+      console.warn('Audit logs realtime listener notice:', err);
+    }
 
     return () => {
-      clearInterval(interval);
       unsubAttempts();
       unsubSubmissions();
       unsubAudit();
     };
-  }, [isAdmin, syncAdminData]);
+  }, [isAdmin]);
 
   // 5. Winners Listener
   useEffect(() => {
@@ -349,6 +329,7 @@ function MainApp() {
 
           setActiveSession({
             attemptId: data.attemptId,
+            startedAt: data.startedAt || new Date().toISOString(),
             deadline: data.deadline,
             durationSeconds: data.durationSeconds,
             questions: data.questions,
@@ -419,6 +400,7 @@ function MainApp() {
 
         setActiveSession({
           attemptId,
+          startedAt: now.toISOString(),
           deadline,
           durationSeconds: durationSec,
           questions: sanitized,
@@ -439,8 +421,7 @@ function MainApp() {
 
     try {
       const idToken = await getIdToken();
-      let submittedAtIso = new Date().toISOString();
-      let submitHandledByApi = false;
+      const submittedAtIso = new Date().toISOString();
 
       // Calculate scores and write SubmissionRecord directly to Firestore
       if (currentUser) {
@@ -466,6 +447,14 @@ function MainApp() {
           }
         });
 
+        const startMs = activeSession.startedAt
+          ? new Date(activeSession.startedAt).getTime()
+          : (Date.now() - activeSession.durationSeconds * 1000);
+        const actualTimeUsed = Math.min(
+          activeSession.durationSeconds,
+          Math.max(1, Math.round((Date.now() - startMs) / 1000))
+        );
+
         const subRecord: SubmissionRecord = {
           id: submissionId,
           attemptId: activeSession.attemptId,
@@ -486,9 +475,9 @@ function MainApp() {
           correct,
           wrong,
           score: correct,
-          startedAt: new Date(new Date().getTime() - activeSession.durationSeconds * 1000).toISOString(),
+          startedAt: activeSession.startedAt || new Date(Date.now() - actualTimeUsed * 1000).toISOString(),
           submittedAt: submittedAtIso,
-          timeUsed: activeSession.durationSeconds,
+          timeUsed: actualTimeUsed,
           syncedToSheets: false,
           createdAt: submittedAtIso,
         };
@@ -499,6 +488,8 @@ function MainApp() {
             status: isTimeout ? 'TIMED_OUT' : 'SUBMITTED',
             finalized: true,
             submittedAt: submittedAtIso,
+            timeUsed: actualTimeUsed,
+            score: correct,
           });
         } catch (dbErr) {
           console.warn('Firestore direct submission notice:', dbErr);
