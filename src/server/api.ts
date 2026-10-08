@@ -708,7 +708,6 @@ apiRouter.get('/admin/data', async (req: Request, res: Response): Promise<void> 
   try {
     // 1. Attempts
     const attemptsMap = new Map<string, AttemptRecord>();
-    inMemoryAttempts.forEach((att, id) => attemptsMap.set(id, att));
     try {
       const snap = await getDocs(collection(db, 'attempts'));
       snap.docs.forEach((d) => {
@@ -716,11 +715,11 @@ apiRouter.get('/admin/data', async (req: Request, res: Response): Promise<void> 
       });
     } catch (e) {
       console.warn('Firestore attempts load notice:', e);
+      inMemoryAttempts.forEach((att, id) => attemptsMap.set(id, att));
     }
 
     // 2. Submissions
     const submissionsMap = new Map<string, SubmissionRecord>();
-    inMemorySubmissions.forEach((sub, id) => submissionsMap.set(id, sub));
     try {
       const snap = await getDocs(collection(db, 'submissions'));
       snap.docs.forEach((d) => {
@@ -728,6 +727,7 @@ apiRouter.get('/admin/data', async (req: Request, res: Response): Promise<void> 
       });
     } catch (e) {
       console.warn('Firestore submissions load notice:', e);
+      inMemorySubmissions.forEach((sub, id) => submissionsMap.set(id, sub));
     }
 
     // 3. Audit Logs
@@ -1062,6 +1062,64 @@ apiRouter.post('/admin/delete-submission', async (req: Request, res: Response): 
   } catch (err: any) {
     console.error('Delete submission error:', err);
     res.status(500).json({ error: err.message || 'Failed to delete answer script.' });
+  }
+});
+
+/**
+ * POST /api/admin/reset-attempt
+ * Resets/deletes in-progress or completed attempts for a candidate so they can re-take
+ */
+apiRouter.post('/admin/reset-attempt', async (req: Request, res: Response): Promise<void> => {
+  const { isAdmin, user } = await verifyAdminUser(req);
+  if (!isAdmin || !user) {
+    res.status(403).json({ error: 'Forbidden: Admin access required.' });
+    return;
+  }
+
+  try {
+    const { uid, email } = req.body || {};
+    if (!uid && !email) {
+      res.status(400).json({ error: 'Participant UID or Email is required.' });
+      return;
+    }
+
+    let resetCount = 0;
+    try {
+      const q = uid
+        ? query(collection(db, 'attempts'), where('uid', '==', uid))
+        : query(collection(db, 'attempts'), where('participantEmail', '==', email));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, 'attempts', d.id));
+        inMemoryAttempts.delete(d.id);
+        resetCount++;
+      }
+    } catch (e) {
+      console.warn('Firestore attempt reset notice:', e);
+    }
+
+    inMemoryAttempts.forEach((att, key) => {
+      if ((uid && att.uid === uid) || (email && att.participantEmail === email)) {
+        inMemoryAttempts.delete(key);
+        resetCount++;
+      }
+    });
+
+    await logAuditEvent({
+      eventType: 'ATTEMPT_RESET',
+      category: 'ADMIN',
+      severity: 'WARN',
+      actorUid: user.uid,
+      actorEmail: user.email,
+      actorName: user.displayName || user.email.split('@')[0],
+      details: `Reset quiz session attempt for candidate ${email || uid} (Removed ${resetCount} attempt records).`,
+      metadata: { targetUid: uid, targetEmail: email, resetCount },
+    });
+
+    res.json({ success: true, message: 'Participant attempt reset successfully.', resetCount });
+  } catch (err: any) {
+    console.error('Reset attempt error:', err);
+    res.status(500).json({ error: err.message || 'Failed to reset attempt.' });
   }
 });
 

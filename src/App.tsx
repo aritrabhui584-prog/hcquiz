@@ -636,29 +636,47 @@ function MainApp() {
       } catch {}
 
       try {
-        const qAtt = query(collection(db, 'attempts'), where('uid', '==', participant.uid));
-        const snapAtt = await getDocs(qAtt);
+        const snapAtt = await getDocs(collection(db, 'attempts'));
         for (const d of snapAtt.docs) {
-          await deleteDoc(doc(db, 'attempts', d.id));
+          const data = d.data();
+          if (
+            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
+            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
+          ) {
+            await deleteDoc(doc(db, 'attempts', d.id));
+          }
         }
       } catch {}
 
       try {
-        const qSub = query(collection(db, 'submissions'), where('uid', '==', participant.uid));
-        const snapSub = await getDocs(qSub);
+        const snapSub = await getDocs(collection(db, 'submissions'));
         for (const d of snapSub.docs) {
-          await deleteDoc(doc(db, 'submissions', d.id));
+          const data = d.data();
+          if (
+            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
+            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
+          ) {
+            await deleteDoc(doc(db, 'submissions', d.id));
+          }
         }
       } catch {}
 
       setAttempts((prev) =>
-        prev.filter((a) => a.uid !== participant.uid && a.participantEmail !== participant.email)
+        prev.filter(
+          (a) =>
+            a.uid !== participant.uid &&
+            a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+        )
       );
       setSubmissions((prev) =>
-        prev.filter((s) => s.uid !== participant.uid && s.participantEmail !== participant.email)
+        prev.filter(
+          (s) =>
+            s.uid !== participant.uid &&
+            s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+        )
       );
 
-      syncAdminData();
+      await syncAdminData();
     } catch (err) {
       console.error('Delete participant error:', err);
       throw err;
@@ -667,13 +685,39 @@ function MainApp() {
 
   const handleResetAttempt = async (participant: { uid: string; email: string }) => {
     try {
-      const qAtt = query(collection(db, 'attempts'), where('uid', '==', participant.uid));
-      const snapAtt = await getDocs(qAtt);
-      for (const d of snapAtt.docs) {
-        await deleteDoc(doc(db, 'attempts', d.id));
-      }
-      setAttempts((prev) => prev.filter((a) => a.uid !== participant.uid));
-      syncAdminData();
+      const idToken = await getIdToken();
+      try {
+        await fetch('/api/admin/reset-attempt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify(participant),
+        });
+      } catch {}
+
+      try {
+        const snapAtt = await getDocs(collection(db, 'attempts'));
+        for (const d of snapAtt.docs) {
+          const data = d.data();
+          if (
+            (participant.uid && (data.uid === participant.uid || d.id.includes(participant.uid))) ||
+            (participant.email && data.participantEmail?.toLowerCase() === participant.email.toLowerCase())
+          ) {
+            await deleteDoc(doc(db, 'attempts', d.id));
+          }
+        }
+      } catch {}
+
+      setAttempts((prev) =>
+        prev.filter(
+          (a) =>
+            a.uid !== participant.uid &&
+            a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
+        )
+      );
+      await syncAdminData();
     } catch (err) {
       console.error('Reset attempt error:', err);
       throw err;
