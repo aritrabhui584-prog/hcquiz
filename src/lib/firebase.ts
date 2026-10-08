@@ -25,8 +25,9 @@ export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-export const SUPER_ADMIN_EMAIL = 'aritrabhui@gmail.com';
+export const SUPER_ADMIN_EMAIL = 'aritrabhui584@gmail.com';
 export const ADMIN_WHITELIST_EMAILS = [
+  'aritrabhui584@gmail.com',
   'aritrabhui@gmail.com',
   'aechardwareclub@gmail.com',
 ].map((e) => e.toLowerCase());

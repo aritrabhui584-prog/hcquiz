@@ -225,28 +225,22 @@ function MainApp() {
 
     try {
       unsubAttempts = onSnapshot(collection(db, 'attempts'), (snap) => {
-        if (!snap.empty) {
-          setAttempts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttemptRecord)));
-        }
+        setAttempts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttemptRecord)));
       });
     } catch {}
 
     try {
       unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snap) => {
-        if (!snap.empty) {
-          setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SubmissionRecord)));
-        }
+        setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SubmissionRecord)));
       });
     } catch {}
 
     try {
       unsubAudit = onSnapshot(collection(db, 'audit_logs'), (snap) => {
-        if (!snap.empty) {
-          const logs = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() } as AuditLogItem))
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          setAuditLogs(logs);
-        }
+        const logs = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as AuditLogItem))
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setAuditLogs(logs);
       });
     } catch {}
 
@@ -416,36 +410,8 @@ function MainApp() {
       let submittedAtIso = new Date().toISOString();
       let submitHandledByApi = false;
 
-      try {
-        const response = await fetch('/api/quiz/submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({
-            attemptId: activeSession.attemptId,
-            answers,
-            isTimeout,
-          }),
-        });
-
-        const text = await response.text();
-        let data: any = null;
-        try {
-          data = JSON.parse(text);
-        } catch {}
-
-        if (response.ok && data?.success) {
-          submittedAtIso = data.submittedAt || submittedAtIso;
-          submitHandledByApi = true;
-        }
-      } catch (apiErr) {
-        console.warn('Backend API submit notice (using direct Firestore record):', apiErr);
-      }
-
-      // If API didn't finalize, record directly to Firestore
-      if (!submitHandledByApi && currentUser) {
+      // Calculate scores and write SubmissionRecord directly to Firestore
+      if (currentUser) {
         const submissionId = `sub_${activeSession.attemptId}`;
         const questionsPool = questions.length > 0 ? questions : DEFAULT_QUESTIONS;
         const qMap = new Map<string, QuestionItem>();
@@ -505,6 +471,24 @@ function MainApp() {
         } catch (dbErr) {
           console.warn('Firestore direct submission notice:', dbErr);
         }
+      }
+
+      // Also notify backend API in background for Sheets sync and server audit logging
+      try {
+        await fetch('/api/quiz/submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({
+            attemptId: activeSession.attemptId,
+            answers,
+            isTimeout,
+          }),
+        });
+      } catch (apiErr) {
+        console.warn('Background serverless sync notice:', apiErr);
       }
 
       soundEffects.playSubmissionSuccess();

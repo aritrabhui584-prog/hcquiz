@@ -12,6 +12,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
+        request.auth.token.email.matches('(?i)aritrabhui584@gmail.com') ||
         request.auth.token.email.matches('(?i)aritrabhui@gmail.com') ||
         request.auth.token.email.matches('(?i)aechardwareclub@gmail.com')
       );
@@ -50,11 +51,9 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    // Submissions - participants can create, only admins can read all scores
+    // Submissions - participants can create and read, admins have full access
     match /submissions/{submissionId} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Published Winners & Leaderboard - public read, admin write
