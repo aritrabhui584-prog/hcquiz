@@ -640,18 +640,32 @@ function MainApp() {
   const handleDeleteParticipant = async (participant: { uid: string; email: string; name: string }) => {
     try {
       const idToken = await getIdToken();
-      const res = await fetch('/api/admin/delete-participant', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(participant),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to delete participant.');
-      }
+      try {
+        await fetch('/api/admin/delete-participant', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify(participant),
+        });
+      } catch {}
+
+      try {
+        const qAtt = query(collection(db, 'attempts'), where('uid', '==', participant.uid));
+        const snapAtt = await getDocs(qAtt);
+        for (const d of snapAtt.docs) {
+          await deleteDoc(doc(db, 'attempts', d.id));
+        }
+      } catch {}
+
+      try {
+        const qSub = query(collection(db, 'submissions'), where('uid', '==', participant.uid));
+        const snapSub = await getDocs(qSub);
+        for (const d of snapSub.docs) {
+          await deleteDoc(doc(db, 'submissions', d.id));
+        }
+      } catch {}
 
       setAttempts((prev) =>
         prev.filter((a) => a.uid !== participant.uid && a.participantEmail !== participant.email)
@@ -667,26 +681,43 @@ function MainApp() {
     }
   };
 
+  const handleResetAttempt = async (participant: { uid: string; email: string }) => {
+    try {
+      const qAtt = query(collection(db, 'attempts'), where('uid', '==', participant.uid));
+      const snapAtt = await getDocs(qAtt);
+      for (const d of snapAtt.docs) {
+        await deleteDoc(doc(db, 'attempts', d.id));
+      }
+      setAttempts((prev) => prev.filter((a) => a.uid !== participant.uid));
+      syncAdminData();
+    } catch (err) {
+      console.error('Reset attempt error:', err);
+      throw err;
+    }
+  };
+
   const handleDeleteSubmission = async (submission: SubmissionRecord) => {
     try {
       const idToken = await getIdToken();
-      const res = await fetch('/api/admin/delete-submission', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          submissionId: submission.id,
-          attemptId: submission.attemptId,
-          participantName: submission.participantName,
-          participantEmail: submission.participantEmail,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to delete submission.');
-      }
+      try {
+        await fetch('/api/admin/delete-submission', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({
+            submissionId: submission.id,
+            attemptId: submission.attemptId,
+            participantName: submission.participantName,
+            participantEmail: submission.participantEmail,
+          }),
+        });
+      } catch {}
+
+      try {
+        await deleteDoc(doc(db, 'submissions', submission.id));
+      } catch {}
 
       setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
       if (submission.attemptId) {
@@ -897,6 +928,7 @@ function MainApp() {
               attempts={attempts}
               submissions={submissions}
               onDeleteParticipant={handleDeleteParticipant}
+              onResetAttempt={handleResetAttempt}
             />
           )}
 

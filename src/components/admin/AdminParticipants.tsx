@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { SubmissionRecord, AttemptRecord } from '../../types/quiz';
 
 interface AdminParticipantsProps {
   attempts: AttemptRecord[];
   submissions: SubmissionRecord[];
   onDeleteParticipant?: (participant: { uid: string; email: string; name: string }) => Promise<void>;
+  onResetAttempt?: (participant: { uid: string; email: string }) => Promise<void>;
 }
 
 export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   attempts,
   submissions,
   onDeleteParticipant,
+  onResetAttempt,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingParticipant, setDeletingParticipant] = useState<{ uid: string; email: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resettingUid, setResettingUid] = useState<string | null>(null);
 
   // Merge unique participants from attempts and submissions
   const participantMap = new Map<string, {
@@ -192,16 +195,39 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
                       )}
                     </td>
                     <td className="p-3.5 text-right">
-                      {onDeleteParticipant && (
-                        <button
-                          onClick={() => setDeletingParticipant({ uid: p.uid, email: p.email, name: p.name })}
-                          className="px-2.5 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-xs font-mono text-rose-400 hover:text-rose-200 transition inline-flex items-center gap-1.5 cursor-pointer"
-                          title="Delete participant record, answer scripts, and attempts"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>DELETE</span>
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-1.5">
+                        {onResetAttempt && p.status === 'IN_PROGRESS' && (
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Reset session for ${p.name} so they can re-take the quiz?`)) {
+                                setResettingUid(p.uid);
+                                try {
+                                  await onResetAttempt({ uid: p.uid, email: p.email });
+                                } finally {
+                                  setResettingUid(null);
+                                }
+                              }
+                            }}
+                            disabled={resettingUid === p.uid}
+                            className="px-2.5 py-1.5 rounded-lg bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/30 text-xs font-mono text-cyan-400 hover:text-cyan-200 transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Reset in-progress session to allow re-taking the quiz"
+                          >
+                            <RotateCcw className={`w-3.5 h-3.5 ${resettingUid === p.uid ? 'animate-spin' : ''}`} />
+                            <span>RESET</span>
+                          </button>
+                        )}
+
+                        {onDeleteParticipant && (
+                          <button
+                            onClick={() => setDeletingParticipant({ uid: p.uid, email: p.email, name: p.name })}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-xs font-mono text-rose-400 hover:text-rose-200 transition inline-flex items-center gap-1.5 cursor-pointer"
+                            title="Delete participant record, answer scripts, and attempts"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>DELETE</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
