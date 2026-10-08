@@ -20,7 +20,7 @@ export const SubmissionResult: React.FC<SubmissionResultProps> = ({
     soundEffects.playSubmissionSuccess();
   }, []);
 
-  const easeVisual = [0.22, 1, 0.36, 1];
+  const easeVisual = [0.22, 1, 0.36, 1] as const;
 
   return (
     <main className="relative w-full h-[calc(100vh-4rem)] overflow-hidden flex items-center justify-center p-6 sm:p-8 lg:p-12 select-none">

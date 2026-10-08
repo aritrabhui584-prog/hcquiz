@@ -51,8 +51,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   // Vantage-inspired precision motion easings
-  const easePrimary = [0.16, 1, 0.3, 1];
-  const easeVisual = [0.22, 1, 0.36, 1];
+  const easePrimary = [0.16, 1, 0.3, 1] as const;
+  const easeVisual = [0.22, 1, 0.36, 1] as const;
 
   return (
     <main className="relative w-full flex-1 flex flex-col justify-center items-center text-center px-6 sm:px-10 lg:px-16 max-w-5xl mx-auto select-none py-12 sm:py-16 lg:py-20">

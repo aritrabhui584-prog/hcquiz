@@ -18,7 +18,8 @@ import {
   ParticipantQuestion,
   QuestionItem,
   QuizEdition,
-  SubmissionRecord
+  SubmissionRecord,
+  AuditLogItem,
 } from '../types/quiz';
 import {
   appendSubmissionToGoogleSheets,
@@ -173,24 +174,21 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
       console.warn('Firestore quiz fetch notice (using active edition fallback):', e);
     }
 
-    if (!targetQuiz) {
-      // Default active quiz edition
-      targetQuiz = {
-        id: 'sharadiya-circuit-2026',
-        title: 'SHARADIYA CIRCUIT 2026',
-        description: 'AEC Hardware Club Premier Hardware Challenge',
-        status: 'LIVE',
-        durationSeconds: 120,
-        questionCount: 25,
-        passingScore: 15,
-        scheduledStartTime: new Date().toISOString(),
-        scheduledEndTime: new Date(Date.now() + 86400000 * 7).toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
+    const activeQuiz: QuizEdition = targetQuiz || {
+      id: 'sharadiya-circuit-2026',
+      title: 'SHARADIYA CIRCUIT 2026',
+      description: 'AEC Hardware Club Premier Hardware Challenge',
+      edition: 'Special Edition 2026',
+      weekNumber: 1,
+      status: 'LIVE',
+      durationSeconds: 120,
+      questionCount: 25,
+      theme: 'Sensors, Microcontrollers & Embedded Circuits',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-    if (targetQuiz.status !== 'LIVE') {
+    if (activeQuiz.status !== 'LIVE') {
       try {
         await logAuditEvent({
           eventType: 'QUIZ_START',
@@ -199,13 +197,13 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
           actorUid: user.uid,
           actorEmail: user.email,
           actorName: user.displayName,
-          details: `Quiz start blocked: Target quiz status is ${targetQuiz.status}.`,
-          metadata: { quizId: targetQuiz.id, status: targetQuiz.status }
+          details: `Quiz start blocked: Target quiz status is ${activeQuiz.status}.`,
+          metadata: { quizId: activeQuiz.id, status: activeQuiz.status }
         });
       } catch {}
       res.status(403).json({
-        error: `Quiz is currently ${targetQuiz.status}. Only LIVE quizzes can be started.`,
-        status: targetQuiz.status,
+        error: `Quiz is currently ${activeQuiz.status}. Only LIVE quizzes can be started.`,
+        status: activeQuiz.status,
       });
       return;
     }
@@ -215,7 +213,7 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
     try {
       const attemptsQuery = query(
         collection(db, 'attempts'),
-        where('quizId', '==', targetQuiz.id),
+        where('quizId', '==', activeQuiz.id),
         where('uid', '==', user.uid)
       );
       const existingAttempts = await getDocs(attemptsQuery);
@@ -223,7 +221,7 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
     } catch (e) {
       console.warn('Firestore attempts query notice (using in-memory attempt check):', e);
       existingAttemptsList = Array.from(inMemoryAttempts.values()).filter(
-        a => a.quizId === targetQuiz!.id && a.uid === user.uid
+        a => a.quizId === activeQuiz.id && a.uid === user.uid
       );
     }
 
@@ -241,7 +239,7 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
           actorEmail: user.email,
           actorName: user.displayName,
           details: 'Attempt blocked: Participant already finalized an attempt for this quiz edition.',
-          metadata: { quizId: targetQuiz.id }
+          metadata: { quizId: activeQuiz.id }
         });
       } catch {}
       res.status(409).json({
@@ -257,8 +255,8 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
     );
 
     const serverNow = new Date();
-    const durationSeconds = targetQuiz.durationSeconds || 120;
-    const countRequired = Math.min(targetQuiz.questionCount || 25, 25);
+    const durationSeconds = activeQuiz.durationSeconds || 120;
+    const countRequired = Math.min(activeQuiz.questionCount || 25, 25);
 
     // Load active question bank
     let allQuestions: QuestionItem[] = [];
@@ -328,7 +326,7 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
       const newAttempt: AttemptRecord = {
         id: attemptId,
         uid: user.uid,
-        quizId: targetQuiz.id,
+        quizId: activeQuiz.id,
         participantName: user.displayName || user.email.split('@')[0],
         participantEmail: user.email,
         participantPhone: phone || '',
@@ -382,15 +380,15 @@ apiRouter.post('/quiz/start', async (req: Request, res: Response): Promise<void>
         actorUid: user.uid,
         actorEmail: user.email,
         actorName: user.displayName || user.email.split('@')[0],
-        details: `Started quiz attempt (${participantQuestions.length} questions, ${durationSeconds}s) for ${targetQuiz.title}.`,
-        metadata: { attemptId, quizId: targetQuiz.id, durationSeconds, questionCount: participantQuestions.length }
+        details: `Started quiz attempt (${participantQuestions.length} questions, ${durationSeconds}s) for ${activeQuiz.title}.`,
+        metadata: { attemptId, quizId: activeQuiz.id, durationSeconds, questionCount: participantQuestions.length }
       });
     } catch {}
 
     res.json({
       attemptId,
-      quizId: targetQuiz.id,
-      quizTitle: targetQuiz.title,
+      quizId: activeQuiz.id,
+      quizTitle: activeQuiz.title,
       durationSeconds,
       startedAt: startedAtIso,
       deadline: deadlineIso,

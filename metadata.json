@@ -1,6 +1,6 @@
 {
   "name": "AEC Hardware Club — Weekly Hardware Quiz",
-  "description": "Official weekly competitive hardware MCQ platform for AEC Hardware Club. 30 questions, 120 seconds, one shot.",
+  "description": "Official weekly competitive hardware MCQ platform for AEC Hardware Club. 25 questions, 120 seconds, one shot.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { QuizStatus } from '../../types/quiz';
+import { HeaderLogo } from '../common/HeaderLogo';
 
 export type AdminTab =
   | 'dashboard'
@@ -71,10 +72,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       <aside className="w-full md:w-64 bg-[#070b0e] border-r border-emerald-500/20 flex flex-col shrink-0 select-none">
         {/* Brand Banner */}
         <div className="p-4 border-b border-emerald-500/20">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
+          <div className="flex items-center gap-3">
+            <HeaderLogo size={32} className="shrink-0 rounded-full border border-emerald-500/30 p-0.5 bg-slate-950/80 shadow-[0_0_10px_rgba(16,185,129,0.2)]" />
             <div>
               <h2 className="font-mono text-xs font-black tracking-widest text-white uppercase">
                 AEC ADMIN CONSOLE
@@ -96,8 +95,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             return (
               <button
                 key={item.tab}
+                type="button"
                 onClick={() => onSelectTab(item.tab)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-mono transition ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-mono transition cursor-pointer ${
                   isActive
                     ? 'bg-emerald-500/15 border border-emerald-400/50 text-emerald-300 font-bold shadow-[0_0_15px_rgba(16,185,129,0.15)]'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
@@ -131,8 +131,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         <div className="p-3 border-t border-emerald-500/20 space-y-2">
           {/* Admin Simulation Preview */}
           <button
+            type="button"
             onClick={onOpenPreview}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-xs font-bold transition"
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-xs font-bold transition cursor-pointer active:scale-95"
           >
             <Eye className="w-3.5 h-3.5 text-cyan-400" />
             <span>TEST PARTICIPANT SIM</span>
@@ -140,10 +141,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
           {/* Exit to Public App */}
           <button
-            onClick={onExitToApp}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white font-mono text-xs transition"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              onExitToApp();
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-700 hover:border-emerald-500/50 bg-slate-900/60 hover:bg-slate-800 text-slate-200 hover:text-emerald-300 font-mono text-xs font-semibold transition cursor-pointer active:scale-95 shadow-sm"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
             <span>RETURN TO PUBLIC APP</span>
           </button>
 
@@ -151,9 +156,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           <div className="pt-2 flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800">
             <span className="truncate max-w-[130px]">{userProfile?.email}</span>
             <button
+              type="button"
               onClick={logout}
               title="Sign Out"
-              className="p-1 hover:text-rose-400 transition"
+              className="p-1 hover:text-rose-400 transition cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>

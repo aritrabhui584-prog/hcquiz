@@ -6,6 +6,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email.matches('(?i)aritrabhui@gmail.com') ||
@@ -19,59 +23,64 @@ service cloud.firestore {
       );
     }
 
-    // User profiles
+    // User profiles - owners can read/update their own profile, admins have full access
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if isOwner(userId) || isAdmin();
     }
 
-    // Admins registry
+    // Admins registry - only Super Admins can write
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
 
-    // Quizzes (public read and write)
+    // Quizzes - publicly readable, only admins can modify
     match /quizzes/{quizId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Questions (Read/write open for quiz operations)
+    // Questions bank with answer keys - admin only (participants get sanitized questions via server API)
     match /questions/{questionId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     // Participant Attempts
     match /attempts/{attemptId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
-    // Submissions
+    // Submissions - participants can create, only admins can read all scores
     match /submissions/{submissionId} {
-      allow read, write: if true;
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
-    // Winners
+    // Published Winners & Leaderboard - public read, admin write
     match /winners/{winnerId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Leaderboard
     match /leaderboard/{entryId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Animation presets metadata
     match /animations/{animationId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Audit logs
+    // Audit logs & Email notifications - admin only
     match /audit_logs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Email Notifications log
     match /email_notifications/{notificationId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
   }
 }

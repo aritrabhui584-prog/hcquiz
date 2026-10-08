@@ -30,7 +30,7 @@ export const WinnersPage: React.FC<WinnersPageProps> = ({ onBack }) => {
     fetchWinners();
   }, []);
 
-  const easeVisual = [0.16, 1, 0.3, 1];
+  const easeVisual = [0.16, 1, 0.3, 1] as const;
 
   return (
     <main className="relative w-full min-h-[calc(100vh-6rem)] flex flex-col justify-between items-center text-center px-6 sm:px-10 lg:px-16 max-w-5xl mx-auto py-8 sm:py-12 select-none">

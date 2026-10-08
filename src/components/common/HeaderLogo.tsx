@@ -7,26 +7,36 @@ interface HeaderLogoProps {
 }
 
 export const HeaderLogo: React.FC<HeaderLogoProps> = ({ size = 28, className = '', src }) => {
-  const [imgError, setImgError] = useState(false);
-  const logoPath = src || '/logos/hardware-club/club-logo.png';
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const candidateSources = [
+    src,
+    '/logos/hardware-club/club-logo.png',
+    '/club-logo.png',
+    '/logo.png',
+  ].filter(Boolean) as string[];
+
+  const currentSrc = candidateSources[sourceIndex];
+  const hasValidImage = sourceIndex < candidateSources.length;
+
+  const handleImgError = () => {
+    setSourceIndex((prev) => prev + 1);
+  };
 
   return (
     <div
-      className={`relative flex items-center justify-center select-none ${className}`}
+      className={`relative flex items-center justify-center select-none shrink-0 ${className}`}
       style={{ width: size, height: size }}
     >
-      {!imgError && (
+      {hasValidImage ? (
         <img
-          src={logoPath}
+          src={currentSrc}
           alt="AEC Hardware Club Logo"
           width={size}
           height={size}
-          className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-          onError={() => setImgError(true)}
+          className="w-full h-full object-contain rounded-full transition-transform duration-300 group-hover:scale-105"
+          onError={handleImgError}
         />
-      )}
-
-      {imgError && (
+      ) : (
         <svg
           width={size}
           height={size}

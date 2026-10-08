@@ -103,6 +103,9 @@ function MainApp() {
   const navigate = (path: string) => {
     window.history.pushState({}, '', path);
     setCurrentRoute(path);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   };
 
   // 1. Initial Quizzes listener and auto-bootstrapper
