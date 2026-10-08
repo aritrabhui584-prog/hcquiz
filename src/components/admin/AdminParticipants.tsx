@@ -38,9 +38,17 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   }>();
 
   attempts.forEach((a) => {
-    const elapsed = a.submittedAt && a.startedAt
-      ? Math.max(1, Math.round((new Date(a.submittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
-      : null;
+    const isPastDeadline = a.deadline
+      ? new Date(a.deadline).getTime() < Date.now()
+      : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 < Date.now());
+
+    const isSubmitted = a.status === 'SUBMITTED' || a.finalized || Boolean(a.submittedAt) || isPastDeadline;
+    const computedStatus = isSubmitted ? 'SUBMITTED' : (a.status || 'IN_PROGRESS');
+
+    const effectiveSubmittedAt = a.submittedAt || (isPastDeadline ? a.deadline || new Date(new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000).toISOString() : null);
+    const elapsed = effectiveSubmittedAt && a.startedAt
+      ? Math.max(1, Math.round((new Date(effectiveSubmittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
+      : (isPastDeadline ? a.durationSeconds || 120 : null);
 
     participantMap.set(a.uid, {
       uid: a.uid,
@@ -50,12 +58,12 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       photoUrl: a.participantPhotoUrl,
       quizId: a.quizId,
       startedAt: a.startedAt,
-      submittedAt: a.submittedAt || null,
-      status: a.status || (a.finalized ? 'SUBMITTED' : 'IN_PROGRESS'),
+      submittedAt: effectiveSubmittedAt,
+      status: computedStatus,
       timeUsed: (a as any).timeUsed ?? elapsed,
-      score: (a as any).score ?? null,
+      score: (a as any).score ?? ((a as any).answers ? Object.keys((a as any).answers).length : null),
       totalQuestions: a.selectedQuestionIds?.length || 25,
-      attempted: (a as any).attempted ?? null,
+      attempted: (a as any).attempted ?? ((a as any).answers ? Object.keys((a as any).answers).length : null),
     });
   });
 
