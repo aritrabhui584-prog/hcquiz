@@ -698,8 +698,6 @@ function MainApp() {
             s.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
         )
       );
-
-      await syncAdminData();
     } catch (err) {
       console.error('Delete participant error:', err);
       throw err;
@@ -740,7 +738,6 @@ function MainApp() {
             a.participantEmail?.toLowerCase() !== participant.email?.toLowerCase()
         )
       );
-      await syncAdminData();
     } catch (err) {
       console.error('Reset attempt error:', err);
       throw err;
@@ -774,8 +771,6 @@ function MainApp() {
       if (submission.attemptId) {
         setAttempts((prev) => prev.filter((a) => a.id !== submission.attemptId));
       }
-
-      syncAdminData();
     } catch (err) {
       console.error('Delete submission error:', err);
       throw err;
