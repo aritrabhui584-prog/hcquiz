@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Sparkles,
+  Trophy,
   RefreshCw,
   Cpu,
   ShieldAlert
@@ -252,7 +253,7 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
         >
           <div className="flex items-center justify-between mb-3">
             <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              <Sparkles className="w-5 h-5" />
+              <Trophy className="w-5 h-5" />
             </div>
             <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-1 transition" />
           </div>
