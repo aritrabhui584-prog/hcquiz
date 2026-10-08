@@ -17,9 +17,9 @@ export const PhoneModal: React.FC<PhoneModalProps> = ({ isOpen, onSuccess, onCan
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPhone = phone.trim();
-    if (!cleanPhone || cleanPhone.length < 7) {
-      setError('Please enter a valid phone number (min 7 digits).');
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      setError('Please enter a valid 10-digit phone number.');
       return;
     }
 

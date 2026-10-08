@@ -83,23 +83,29 @@ export const QuizInterface: React.FC<QuizInterfaceProps> = ({
     soundEffects.playQuizStart();
   }, []);
 
+  const hasAutoSubmittedRef = useRef(false);
+  const onSubmitRef = useRef(onSubmit);
+  onSubmitRef.current = onSubmit;
+
   const handleAutoSubmit = useCallback(async () => {
-    if (isSubmitting) return;
+    if (hasAutoSubmittedRef.current) return;
+    hasAutoSubmittedRef.current = true;
     setIsTimedOut(true);
     setIsSubmitting(true);
     setShowSubmitModal(false);
     try {
       soundEffects.playSubmissionSuccess();
-      await onSubmit(answersRef.current, true);
+      await onSubmitRef.current(answersRef.current, true);
     } catch (err) {
       console.error('Auto submission error:', err);
     }
-  }, [isSubmitting, onSubmit]);
+  }, []);
 
   useEffect(() => {
     const deadlineTime = new Date(deadline).getTime();
     const interval = setInterval(() => {
-      const diff = Math.max(0, Math.floor((deadlineTime - Date.now()) / 1000));
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((deadlineTime - now) / 1000));
       setSecondsRemaining(diff);
 
       if (diff === 30) soundEffects.playTimerWarning('moderate');

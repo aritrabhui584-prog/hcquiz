@@ -126,13 +126,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onGoHome }) => 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = phone.replace(/\D/g, '');
+    const cleanRollNo = rollNo.replace(/\D/g, '');
 
     if (!name.trim()) {
       setErrorMessage('Please enter your full name');
       return;
     }
-    if (!cleanPhone || cleanPhone.length < 10) {
+    if (!cleanPhone || cleanPhone.length !== 10) {
       setErrorMessage('Please enter a valid 10-digit phone number');
+      return;
+    }
+    if (!cleanRollNo || cleanRollNo.length !== 12) {
+      setErrorMessage('Please enter a valid 12-digit University Roll Number');
       return;
     }
     if (!stream.trim()) {
@@ -141,10 +146,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onGoHome }) => 
     }
     if (!year.trim()) {
       setErrorMessage('Please select your Year of study');
-      return;
-    }
-    if (!rollNo.trim()) {
-      setErrorMessage('Please enter your College Roll number');
       return;
     }
 
@@ -156,7 +157,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onGoHome }) => 
         phone: cleanPhone,
         stream: stream.trim(),
         year: year.trim(),
-        rollNo: rollNo.trim(),
+        rollNo: cleanRollNo,
         membershipId: membershipId.trim(),
         photoURL: photoUrl || currentUser?.photoURL || '',
       });
@@ -377,18 +378,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onGoHome }) => 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-mono-tech text-[10.5px] text-[#A9B8B0] uppercase tracking-wider block mb-1">
-                    College Roll No. <span className="text-[#B62A35]">*</span>
+                    University Roll No. (12 digits) <span className="text-[#B62A35]">*</span>
                   </label>
                   <div className="relative">
                     <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6F837A]" />
                     <input
                       type="text"
+                      inputMode="numeric"
                       value={rollNo}
                       onChange={(e) => {
-                        setRollNo(e.target.value);
+                        setRollNo(e.target.value.replace(/\D/g, '').slice(0, 12));
                         if (errorMessage) setErrorMessage('');
                       }}
-                      placeholder="e.g. 10200122045"
+                      placeholder="12-digit roll number"
+                      maxLength={12}
                       required
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white font-mono-tech text-xs focus:outline-none focus:border-[#7EE8A6]"
                     />
@@ -397,18 +400,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onGoHome }) => 
 
                 <div>
                   <label className="font-mono-tech text-[10.5px] text-[#A9B8B0] uppercase tracking-wider block mb-1">
-                    Phone Number <span className="text-[#B62A35]">*</span>
+                    Phone Number (10 digits) <span className="text-[#B62A35]">*</span>
                   </label>
                   <div className="relative">
                     <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6F837A]" />
                     <input
                       type="tel"
+                      inputMode="numeric"
                       value={phone}
                       onChange={(e) => {
                         setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
                         if (errorMessage) setErrorMessage('');
                       }}
-                      placeholder="10-digit number"
+                      placeholder="10-digit mobile number"
                       maxLength={10}
                       required
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white font-mono-tech text-xs focus:outline-none focus:border-[#7EE8A6]"

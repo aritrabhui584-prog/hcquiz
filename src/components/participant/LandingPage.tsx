@@ -31,7 +31,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       onOpenPhoneModal();
       return;
     }
-    if (!userProfile?.rollNo || !userProfile?.stream || !userProfile?.year || !userProfile?.phone) {
+    const cleanPhone = (userProfile?.phone || '').replace(/\D/g, '');
+    const cleanRollNo = (userProfile?.rollNo || '').replace(/\D/g, '');
+    if (
+      !userProfile?.rollNo ||
+      cleanRollNo.length !== 12 ||
+      !userProfile?.stream ||
+      !userProfile?.year ||
+      !userProfile?.phone ||
+      cleanPhone.length !== 10
+    ) {
       onOpenPhoneModal();
       return;
     }
