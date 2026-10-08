@@ -143,19 +143,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <span>TEST PARTICIPANT SIM</span>
           </button>
 
-          {/* Exit to Public App */}
-          <a
-            href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              onExitToApp();
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-700 hover:border-emerald-500/50 bg-slate-900/60 hover:bg-slate-800 text-slate-200 hover:text-emerald-300 font-mono text-xs font-semibold transition cursor-pointer active:scale-95 shadow-sm text-center select-none"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>RETURN TO PUBLIC APP</span>
-          </a>
-
           {/* User Info & Logout */}
           <div className="pt-2 flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800">
             <span className="truncate max-w-[130px]">{userProfile?.email}</span>
