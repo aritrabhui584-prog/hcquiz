@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Phone, Mail, Trash2, AlertTriangle, Loader2, RotateCcw, User } from 'lucide-react';
 import { SubmissionRecord, AttemptRecord, QuestionItem, UserProfile } from '../../types/quiz';
+import { isAuthorizedAdminEmail } from '../../lib/firebase';
 
 interface AdminParticipantsProps {
   attempts: AttemptRecord[];
@@ -66,9 +67,9 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     attempted: number | null;
   }>();
 
-  // 1. Seed with registered users
+  // 1. Seed with registered users (strictly exclude admin accounts)
   users.forEach((u) => {
-    if (u.isAdmin) return; // Skip admin accounts from participant list
+    if (u.isAdmin || isAuthorizedAdminEmail(u.email)) return;
     const userKey = (u.uid || u.email).toLowerCase();
     participantMap.set(userKey, {
       uid: u.uid || userKey,
@@ -87,8 +88,9 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     });
   });
 
-  // 2. Overlay attempts
+  // 2. Overlay attempts (strictly exclude admin accounts)
   attempts.forEach((a) => {
+    if (isAuthorizedAdminEmail(a.participantEmail) || isAuthorizedAdminEmail((a as any).email)) return;
     const isPastDeadline = a.deadline
       ? new Date(a.deadline).getTime() <= Date.now()
       : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
@@ -149,8 +151,9 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
     });
   });
 
-  // 3. Overlay submissions
+  // 3. Overlay submissions (strictly exclude admin accounts)
   submissions.forEach((s) => {
+    if (isAuthorizedAdminEmail(s.participantEmail) || isAuthorizedAdminEmail((s as any).email)) return;
     const userKey = (s.uid || s.participantEmail || s.id).toLowerCase();
     const existing = participantMap.get(userKey);
 

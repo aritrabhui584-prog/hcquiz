@@ -14,7 +14,9 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.email.matches('(?i)aritrabhui584@gmail.com') ||
         request.auth.token.email.matches('(?i)aritrabhui@gmail.com') ||
-        request.auth.token.email.matches('(?i)aechardwareclub@gmail.com')
+        request.auth.token.email.matches('(?i)aechardwareclub@gmail.com') ||
+        request.auth.token.email.matches('(?i)sarkarsnata@gmail.com') ||
+        request.auth.token.email.matches('(?i)aritrabhui1504@gmail.com')
       );
     }
 
@@ -26,7 +28,7 @@ service cloud.firestore {
 
     // User profiles - owners can read/update their own profile, admins have full access
     match /users/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin();
+      allow read, write, delete: if isOwner(userId) || isAdmin();
     }
 
     // Admins registry - only Super Admins can write
@@ -38,49 +40,49 @@ service cloud.firestore {
     // Quizzes - publicly readable, only admins can modify
     match /quizzes/{quizId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write, delete: if isAdmin();
     }
 
     // Questions bank - authenticated users can read, only admins can modify
     match /questions/{questionId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write, delete: if isAdmin();
     }
 
     // Participant Attempts - signed in users can create/update their attempts, admins have full control
     match /attempts/{attemptId} {
-      allow read, write: if isSignedIn();
+      allow read, write, delete: if isSignedIn();
     }
 
     // Submissions & Answer Scripts - signed in users can record submissions, admins have full control
     match /submissions/{submissionId} {
-      allow read, write: if isSignedIn();
+      allow read, write, delete: if isSignedIn();
     }
 
     // Published Winners & Leaderboard - public read, admin write
     match /winners/{winnerId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write, delete: if isAdmin();
     }
 
     match /leaderboard/{entryId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write, delete: if isAdmin();
     }
 
     // Animation presets metadata
     match /animations/{animationId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write, delete: if isAdmin();
     }
 
     // Audit logs & Email notifications - admin only
     match /audit_logs/{logId} {
-      allow read, write: if isAdmin();
+      allow read, write, delete: if isAdmin();
     }
 
     match /email_notifications/{notificationId} {
-      allow read, write: if isAdmin();
+      allow read, write, delete: if isAdmin();
     }
   }
 }

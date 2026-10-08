@@ -31,6 +31,7 @@ export const ADMIN_WHITELIST_EMAILS = [
   'aritrabhui@gmail.com',
   'aechardwareclub@gmail.com',
   'sarkarsnata@gmail.com',
+  'aritrabhui1504@gmail.com',
 ].map((e) => e.toLowerCase());
 
 export function isAuthorizedAdminEmail(email?: string | null): boolean {
