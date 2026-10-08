@@ -1122,6 +1122,26 @@ apiRouter.post('/admin/reset-attempt', async (req: Request, res: Response): Prom
       }
     });
 
+    // Also remove any existing submissions so the participant has a completely fresh slate
+    try {
+      const qSub = uid
+        ? query(collection(db, 'submissions'), where('uid', '==', uid))
+        : query(collection(db, 'submissions'), where('participantEmail', '==', email));
+      const snapSub = await getDocs(qSub);
+      for (const d of snapSub.docs) {
+        await deleteDoc(doc(db, 'submissions', d.id));
+        inMemorySubmissions.delete(d.id);
+      }
+    } catch (e) {
+      console.warn('Firestore submission reset notice:', e);
+    }
+
+    inMemorySubmissions.forEach((sub, key) => {
+      if ((uid && sub.uid === uid) || (email && sub.participantEmail === email)) {
+        inMemorySubmissions.delete(key);
+      }
+    });
+
     await logAuditEvent({
       eventType: 'ATTEMPT_RESET',
       category: 'ADMIN',

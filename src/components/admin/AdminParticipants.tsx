@@ -39,8 +39,8 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
 
   attempts.forEach((a) => {
     const isPastDeadline = a.deadline
-      ? new Date(a.deadline).getTime() < Date.now()
-      : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 < Date.now());
+      ? new Date(a.deadline).getTime() <= Date.now()
+      : (new Date(a.startedAt).getTime() + (a.durationSeconds || 120) * 1000 <= Date.now());
 
     const isSubmitted = a.status === 'SUBMITTED' || a.finalized || Boolean(a.submittedAt) || isPastDeadline;
     const computedStatus = isSubmitted ? 'SUBMITTED' : (a.status || 'IN_PROGRESS');
@@ -50,8 +50,9 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
       ? Math.max(1, Math.round((new Date(effectiveSubmittedAt).getTime() - new Date(a.startedAt).getTime()) / 1000))
       : (isPastDeadline ? a.durationSeconds || 120 : null);
 
-    participantMap.set(a.uid, {
-      uid: a.uid,
+    const userKey = (a.uid || a.participantEmail || a.id).toLowerCase();
+    participantMap.set(userKey, {
+      uid: a.uid || userKey,
       name: a.participantName || (a.participantEmail ? a.participantEmail.split('@')[0] : 'Participant'),
       email: a.participantEmail || '',
       phone: a.participantPhone || 'N/A',
@@ -68,9 +69,10 @@ export const AdminParticipants: React.FC<AdminParticipantsProps> = ({
   });
 
   submissions.forEach((s) => {
-    const existing = participantMap.get(s.uid);
-    participantMap.set(s.uid, {
-      uid: s.uid,
+    const userKey = (s.uid || s.participantEmail || s.id).toLowerCase();
+    const existing = participantMap.get(userKey);
+    participantMap.set(userKey, {
+      uid: s.uid || existing?.uid || userKey,
       name: s.participantName || existing?.name || (s.participantEmail ? s.participantEmail.split('@')[0] : 'Participant'),
       email: s.participantEmail || existing?.email || '',
       phone: s.participantPhone || existing?.phone || 'N/A',
